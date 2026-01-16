@@ -22,7 +22,7 @@ This repository contains Claude skills specifically built for MACHHUB, enabling 
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/machhub-dev/claude-skills.git
+   git clone https://github.com/machhub-dev/skills.git
    ```
 2. Follow the instructions in each skill folder for setup and usage.
 3. Integrate the skills with your Claude workspace to automate MACHHUB development tasks.
