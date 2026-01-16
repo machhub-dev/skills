@@ -8,10 +8,10 @@ This repository contains Claude skills specifically built for MACHHUB, enabling 
 
 ## Skills Table
 
-| Skill Name                | Description                                                                                                               | Category          | Version | Example Usage                                                                                      | Status   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------- | -------------------------------------------------------------------------------------------------- | -------- |
-| `machhub-collection-json` | Generates valid MACHHUB Collection JSON schemas, including data types, relations, indexes, and onDelete behaviors.        | Data Management   | 1.0     | Create JSON schemas for MACHHUB Collections and import into the database seamlessly.               | Official |
-| `machhub-typescript-sdk`  | Provides a Claude-powered interface for MACHHUB’s TypeScript SDK, assisting with code generation and workflow automation. | Development Tools | 1.0     | Generate SDK code snippets, assist with TypeScript-based MACHHUB projects, and automate workflows. | Official |
+| Skill Name                | Description                                                                                                               | Category          | Version | Example Usage                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `machhub-collection-json` | Generates valid MACHHUB Collection JSON schemas, including data types, relations, indexes, and onDelete behaviors.        | Data Management   | 1.0     | Create JSON schemas for MACHHUB Collections and import into the database seamlessly.               |
+| `machhub-typescript-sdk`  | Provides a Claude-powered interface for MACHHUB’s TypeScript SDK, assisting with code generation and workflow automation. | Development Tools | 1.0     | Generate SDK code snippets, assist with TypeScript-based MACHHUB projects, and automate workflows. |
 
 ---
 
