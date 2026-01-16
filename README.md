@@ -1,8 +1,4 @@
-Perfect! Here's a **richer README.md** with the updated title/description and an enhanced skills table including **Category, Version, and Example Usage** columns:
-
----
-
-# Official MACHHUB Claude Skills (machhub-dev/claude-skills)
+# Official MACHHUB Claude Skills (machhub-dev/skills)
 
 Official Claude Skills designed to support and enhance MACHHUB development workflows.
 
