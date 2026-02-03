@@ -22,13 +22,165 @@ Use this Skill when working with:
 - **Purpose**: Official TypeScript/JavaScript SDK for interfacing with MACHHUB API
 - **Installation**: `npm install @machhub-dev/sdk-ts`
 
+## SDK Initialization Methods
+
+**IMPORTANT: Choose the right initialization method for your environment.**
+
+The MACHHUB SDK supports two initialization methods:
+
+1. **🎯 MACHHUB Designer Extension (RECOMMENDED for VSCode)** - Zero-configuration initialization
+2. **⚙️ Manual Configuration** - Explicit connection parameters
+
+---
+
+### Method 1: MACHHUB Designer Extension (PREFERRED) ⭐
+
+**When to use:**
+- ✅ Developing in VSCode with MACHHUB Designer Extension installed
+- ✅ Local development and testing
+- ✅ VSCode extension development
+- ✅ Rapid prototyping
+
+**Prerequisites:**
+- MACHHUB Designer Extension installed in VSCode
+- Extension configured and running
+
+**Advantages:**
+- Zero configuration needed
+- Automatic connection handling
+- Simplified development workflow
+- No hardcoded credentials
+
+**Implementation:**
+
+```typescript
+// services/sdk.service.ts
+import { SDK } from '@machhub-dev/sdk-ts';
+
+/**
+ * Singleton SDK Service using MACHHUB Designer Extension
+ * No configuration parameters needed - extension handles all connection details
+ */
+class SDKService {
+  private static instance: SDKService | null = null;
+  private sdk: SDK | null = null;
+  private isInitialized = false;
+  private initPromise: Promise<boolean> | null = null;
+
+  private constructor() {
+    this.sdk = new SDK();
+  }
+
+  public static getInstance(): SDKService {
+    if (!SDKService.instance) {
+      SDKService.instance = new SDKService();
+    }
+    return SDKService.instance;
+  }
+
+  /**
+   * Initialize SDK using MACHHUB Designer Extension settings
+   * No parameters needed - extension provides all configuration
+   */
+  public async initialize(): Promise<boolean> {
+    if (this.isInitialized) {
+      return true;
+    }
+
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    this.initPromise = (async () => {
+      try {
+        if (!this.sdk) {
+          this.sdk = new SDK();
+        }
+
+        // Initialize without parameters - uses MACHHUB Designer Extension
+        const success = await this.sdk.Initialize();
+        this.isInitialized = success;
+
+        if (success) {
+          console.log('SDK initialized successfully using MACHHUB Designer Extension!');
+        } else {
+          console.error('SDK initialization failed. Ensure MACHHUB Designer Extension is installed and configured.');
+        }
+
+        return success;
+      } catch (error) {
+        console.error('Error initializing SDK:', error);
+        this.isInitialized = false;
+        return false;
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
+  }
+
+  public getSDK(): SDK {
+    if (!this.isInitialized || !this.sdk) {
+      throw new Error('SDK not initialized. Call initialize() first.');
+    }
+    return this.sdk;
+  }
+
+  public async getOrInitializeSDK(): Promise<SDK> {
+    if (!this.isInitialized) {
+      const success = await this.initialize();
+      if (!success) {
+        throw new Error('Failed to initialize SDK');
+      }
+    }
+    return this.getSDK();
+  }
+
+  public get initialized(): boolean {
+    return this.isInitialized;
+  }
+
+  public reset(): void {
+    this.sdk = null;
+    this.isInitialized = false;
+    this.initPromise = null;
+  }
+}
+
+export const sdkService = SDKService.getInstance();
+
+export async function getOrInitializeSDK(): Promise<SDK> {
+  return sdkService.getOrInitializeSDK();
+}
+```
+
+**Usage Example:**
+
+```typescript
+// Just call without any configuration
+const sdk = await getOrInitializeSDK();
+const items = await sdk.collection('items').getAll();
+```
+
+---
+
+### Method 2: Manual Configuration
+
+**When to use:**
+- Production deployments
+- CI/CD pipelines
+- Environments without MACHHUB Designer Extension
+- Web applications with SSR (SvelteKit, Next.js, etc.)
+- Custom connection requirements
+
 ## Core Principles
 
 ### 1. Singleton Service Pattern (CRITICAL)
 
 The SDK must be initialized ONCE and reused throughout the application. Never create multiple instances.
 
-**Complete Implementation:**
+**Complete Implementation (Manual Configuration):**
 
 ```typescript
 // services/sdk.service.ts
@@ -1220,9 +1372,20 @@ class WorkflowService {
 
 When generating Machhub SDK code, always ensure:
 
+### Initialization
 - [ ] SDK initialized using singleton pattern (SDKService class)
+- [ ] **PREFER** MACHHUB Designer Extension method (no config) when developing in VSCode
+- [ ] Use Manual Configuration method for production/SSR environments
+- [ ] Browser environment check (`!browser`) only for SSR (Method 2)
+
+### Architecture
 - [ ] Services extend BaseService
 - [ ] No direct SDK access in components
+- [ ] Error handling with try-catch
+- [ ] TypeScript interfaces defined
+- [ ] Methods have JSDoc comments
+
+### Data Handling
 - [ ] Reference fields use `{ Table, ID }` format
 - [ ] Use `RecordIDToString()` and `StringToRecordID()` utilities for ID conversions
 - [ ] RecordID strings use format: `"app_id.collection_name:record_id"`
@@ -1231,10 +1394,8 @@ When generating Machhub SDK code, always ensure:
 - [ ] Understand that relation/id fields return as RecordID unless `expand()` is used
 - [ ] Remember `update()` is PATCH (partial update) - only provided fields are updated
 - [ ] Use `first()` for single results, `count()` for totals
-- [ ] Error handling with try-catch
-- [ ] Browser environment check (`!browser`) for SSR
-- [ ] TypeScript interfaces defined
-- [ ] Methods have JSDoc comments
+
+### Real-time Features
 - [ ] Tag subscriptions have cleanup (`unsubscribe`)
 
 ## Common Patterns
@@ -1379,11 +1540,10 @@ import {
 // Configuration
 interface SDKConfig {
   application_id: string;
-  baseURL?: string;
-  mqttURL?: string;
-  natsURL?: string;
-  timeout?: number;
-  retryAttempts?: number;
+  developer_key?: string;
+  httpUrl?: string;
+  mqttUrl?: string;
+  natsUrl?: string;
 }
 
 // Tag value
@@ -1402,30 +1562,30 @@ interface RecordID {
 
 ## Best Practices Summary
 
-1. ✅ **Always use the Singleton Pattern**: One SDK instance for the entire app
-2. ✅ **Use Services Layer**: Never call SDK directly from components
-3. ✅ **Extend BaseService**: Inherit common CRUD operations
-4. ✅ **Initialize Once**: In your root layout/app component
-5. ✅ **Use getOrInitializeSDK()**: Let the service handle initialization
-6. ✅ **Handle SSR**: Check for browser environment before initialization
-7. ✅ **Implement Error Handling**: Wrap service calls in try-catch
-8. ✅ **Type Everything**: Leverage TypeScript for type safety
-9. ✅ **Unsubscribe**: Clean up tag subscriptions when components unmount
-10. ✅ **Centralize Configuration**: Set application_id and config in one place
-11. ✅ **Use RecordID utilities**: Use RecordIDToString() and StringToRecordID() for conversions
-12. ✅ **Reference fields format**: Use { Table, ID } format for create/update operations
-13. ✅ **Extract IDs properly**: Handle both nested objects and string references when reading
-14. ✅ **Use expand()**: Fetch full related records when needed instead of RecordID objects
-15. ✅ **Remember PATCH behavior**: update() only modifies provided fields
+### Initialization
+1. ✅ **PREFER MACHHUB Designer Extension**: Use zero-config initialization when developing in VSCode
+2. ✅ **Always use the Singleton Pattern**: One SDK instance for the entire app
+3. ✅ **Initialize Once**: In your root layout/app component or extension activation
+4. ✅ **Use getOrInitializeSDK()**: Let the service handle initialization
+5. ✅ **Handle SSR (Manual Config only)**: Check for browser environment before initialization
 
-## Environment Variables (Optional)
+### Architecture
+6. ✅ **Use Services Layer**: Never call SDK directly from components
+7. ✅ **Extend BaseService**: Inherit common CRUD operations
+8. ✅ **Implement Error Handling**: Wrap service calls in try-catch
+9. ✅ **Type Everything**: Leverage TypeScript for type safety
 
-```bash
-MACHHUB_BASE_URL=https://api.machhub.com
-MACHHUB_MQTT_URL=mqtt://mqtt.machhub.com
-MACHHUB_NATS_URL=nats://nats.machhub.com
-MACHHUB_APP_ID=your-app-name
-```
+### Data Operations
+10. ✅ **Use RecordID utilities**: Use RecordIDToString() and StringToRecordID() for conversions
+11. ✅ **Reference fields format**: Use { Table, ID } format for create/update operations
+12. ✅ **Extract IDs properly**: Handle both nested objects and string references when reading
+13. ✅ **Use expand()**: Fetch full related records when needed instead of RecordID objects
+14. ✅ **Remember PATCH behavior**: update() only modifies provided fields
+
+### Real-time & Cleanup
+15. ✅ **Unsubscribe**: Clean up tag subscriptions when components unmount
+
+
 
 ## Project Structure Recommendation
 
@@ -1454,6 +1614,7 @@ src/
 Use this Skill whenever the user:
 - Mentions "Machhub", "@machhub-dev/sdk-ts", or Machhub API
 - Asks about SDK initialization or setup
+- **Asks about MACHHUB Designer Extension or VSCode development**
 - Needs help with collections, CRUD operations, or queries
 - Works with authentication or user management
 - Implements real-time tag subscriptions
@@ -1462,6 +1623,24 @@ Use this Skill whenever the user:
 - Asks about Machhub best practices or patterns
 - Needs to fix reference field issues
 - Works with RecordID conversions or reference field formatting
+
+## Initialization Quick Reference
+
+**Developing in VSCode?** → Use **MACHHUB Designer Extension** (Method 1)
+```typescript
+const success = await sdk.Initialize(); // No config needed!
+```
+
+**Production or SSR app?** → Use **Manual Configuration** (Method 2)
+```typescript
+const success = await sdk.Initialize({
+  application_id: 'your-app',
+  developer_key: 'your-key',      // Optional
+  httpUrl: 'http://localhost:80', // Optional
+  mqttUrl: 'mqtt://localhost:1883', // Optional
+  natsUrl: 'nats://localhost:4222'  // Optional
+});
+```
 
 ## Resources
 
