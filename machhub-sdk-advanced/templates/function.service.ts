@@ -2,43 +2,36 @@
 
 const sdk = await getOrInitializeSDK();
 
-const history = await sdk.historian.query({
-  tagNames: ['temperature/room1'],
-  startTime: '2024-01-01T00:00:00Z',
-  endTime: '2024-01-02T00:00:00Z',
-  interval: '1h',
-  aggregation: 'avg'
-});
+const history = await sdk.historian.query(
+  `SELECT time::floor(time, 1h) AS hour, math::mean(value) AS avg_value
+   FROM historian WHERE topic = 'temperature/room1'
+   AND time >= '2024-01-01T00:00:00Z' AND time <= '2024-01-02T00:00:00Z'
+   GROUP BY hour ORDER BY hour ASC`
+);
 
 console.log(history);
 // [
-//   { timestamp: '2024-01-01T00:00:00Z', value: 22.5 },
-//   { timestamp: '2024-01-01T01:00:00Z', value: 23.1 },
+//   { hour: '2024-01-01T00:00:00Z', avg_value: 22.5 },
+//   { hour: '2024-01-01T01:00:00Z', avg_value: 23.1 },
 //   ...
 // ]
 ```
 
-### Query Parameters
+### Query Parameter
 
-```typescript
-interface HistorianQuery {
-  tagNames: string[];              // Tags to query
-  startTime: string;                // ISO 8601 format
-  endTime: string;                  // ISO 8601 format
-  interval?: string;                // '1m', '5m', '1h', '1d'
-  aggregation?: 'avg' | 'min' | 'max' | 'sum' | 'count';
-}
-```
+`query(SurrealQL: string): Promise<any>`
 
-### Aggregation Types
+Pass a raw SurrealQL string to query historian time-series data. The historian table stores per-topic readings with `topic`, `value`, and `time` fields.
 
-| Type    | Description        | Use Case               |
-| ------- | ------------------ | ---------------------- |
-| `avg`   | Average value      | Temperature trends     |
-| `min`   | Minimum value      | Find lowest readings   |
-| `max`   | Maximum value      | Peak detection         |
-| `sum`   | Sum of values      | Total production count |
-| `count` | Number of readings | Data availability      |
+### SurrealDB Aggregation Functions
+
+| Function         | Description        | Use Case               |
+| ---------------- | ------------------ | ---------------------- |
+| `math::mean()`   | Average value      | Temperature trends     |
+| `math::min()`    | Minimum value      | Find lowest readings   |
+| `math::max()`    | Maximum value      | Peak detection         |
+| `math::sum()`    | Sum of values      | Total production count |
+| `count()`        | Number of readings | Data availability      |
 
 ---
 
@@ -50,42 +43,35 @@ interface HistorianQuery {
 const now = new Date();
 const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-const data = await sdk.historian.query({
-  tagNames: ['temperature/room1'],
-  startTime: yesterday.toISOString(),
-  endTime: now.toISOString(),
-  interval: '1h',
-  aggregation: 'avg'
-});
+const data = await sdk.historian.query(
+  `SELECT time::floor(time, 1h) AS hour, math::mean(value) AS avg_value
+   FROM historian WHERE topic = 'temperature/room1'
+   AND time >= '${yesterday.toISOString()}' AND time <= '${now.toISOString()}'
+   GROUP BY hour ORDER BY hour ASC`
+);
 ```
 
 ### Multiple Sensors
 
 ```typescript
-const data = await sdk.historian.query({
-  tagNames: [
-    'temperature/room1',
-    'temperature/room2',
-    'temperature/room3'
-  ],
-  startTime: '2024-01-01T00:00:00Z',
-  endTime: '2024-01-02T00:00:00Z',
-  interval: '30m',
-  aggregation: 'avg'
-});
+const data = await sdk.historian.query(
+  `SELECT topic, time::floor(time, 30m) AS period, math::mean(value) AS avg_value
+   FROM historian WHERE topic IN ['temperature/room1', 'temperature/room2', 'temperature/room3']
+   AND time >= '2024-01-01T00:00:00Z' AND time <= '2024-01-02T00:00:00Z'
+   GROUP BY topic, period ORDER BY period ASC`
+);
 ```
 
 ### Production Metrics
 
 ```typescript
 // Get hourly production counts
-const production = await sdk.historian.query({
-  tagNames: ['production/line1/count'],
-  startTime: '2024-01-01T08:00:00Z',
-  endTime: '2024-01-01T17:00:00Z',
-  interval: '1h',
-  aggregation: 'sum'
-});
+const production = await sdk.historian.query(
+  `SELECT time::floor(time, 1h) AS hour, math::sum(value) AS total_count
+   FROM historian WHERE topic = 'production/line1/count'
+   AND time >= '2024-01-01T08:00:00Z' AND time <= '2024-01-01T17:00:00Z'
+   GROUP BY hour ORDER BY hour ASC`
+);
 ```
 
 ---
@@ -109,13 +95,12 @@ class AnalyticsService {
     try {
       const sdk = await getOrInitializeSDK();
 
-      const data = await sdk.historian.query({
-        tagNames: ['production/rate'],
-        startTime: startDate.toISOString(),
-        endTime: endDate.toISOString(),
-        interval: '1h',
-        aggregation: 'avg'
-      });
+      const data = await sdk.historian.query(
+        `SELECT time::floor(time, 1h) AS hour, math::mean(value) AS avg_value
+         FROM historian WHERE topic = 'production/rate'
+         AND time >= '${startDate.toISOString()}' AND time <= '${endDate.toISOString()}'
+         GROUP BY hour ORDER BY hour ASC`
+      );
 
       return data;
     } catch (error) {
@@ -134,35 +119,32 @@ class AnalyticsService {
       const start = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
       // Get average
-      const avgData = await sdk.historian.query({
-        tagNames: [sensor],
-        startTime: start.toISOString(),
-        endTime: now.toISOString(),
-        interval: '1h',
-        aggregation: 'avg'
-      });
+      const avgData = await sdk.historian.query(
+        `SELECT time::floor(time, 1h) AS hour, math::mean(value) AS avg_value
+         FROM historian WHERE topic = '${sensor}'
+         AND time >= '${start.toISOString()}' AND time <= '${now.toISOString()}'
+         GROUP BY hour ORDER BY hour ASC`
+      );
 
       // Get min
-      const minData = await sdk.historian.query({
-        tagNames: [sensor],
-        startTime: start.toISOString(),
-        endTime: now.toISOString(),
-        interval: '1h',
-        aggregation: 'min'
-      });
+      const minData = await sdk.historian.query(
+        `SELECT time::floor(time, 1h) AS hour, math::min(value) AS min_value
+         FROM historian WHERE topic = '${sensor}'
+         AND time >= '${start.toISOString()}' AND time <= '${now.toISOString()}'
+         GROUP BY hour ORDER BY hour ASC`
+      );
 
       // Get max
-      const maxData = await sdk.historian.query({
-        tagNames: [sensor],
-        startTime: start.toISOString(),
-        endTime: now.toISOString(),
-        interval: '1h',
-        aggregation: 'max'
-      });
+      const maxData = await sdk.historian.query(
+        `SELECT time::floor(time, 1h) AS hour, math::max(value) AS max_value
+         FROM historian WHERE topic = '${sensor}'
+         AND time >= '${start.toISOString()}' AND time <= '${now.toISOString()}'
+         GROUP BY hour ORDER BY hour ASC`
+      );
 
-      const average = avgData.reduce((sum, d) => sum + d.value, 0) / avgData.length;
-      const minimum = Math.min(...minData.map(d => d.value));
-      const maximum = Math.max(...maxData.map(d => d.value));
+      const average = avgData.reduce((sum, d) => sum + d.avg_value, 0) / avgData.length;
+      const minimum = Math.min(...minData.map(d => d.min_value));
+      const maximum = Math.max(...maxData.map(d => d.max_value));
 
       return { average, minimum, maximum, data: avgData };
     } catch (error) {
@@ -180,13 +162,12 @@ class AnalyticsService {
       const now = new Date();
       const start = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
-      const data = await sdk.historian.query({
-        tagNames: sensors,
-        startTime: start.toISOString(),
-        endTime: now.toISOString(),
-        interval: '30m',
-        aggregation: 'avg'
-      });
+      const data = await sdk.historian.query(
+        `SELECT topic, time::floor(time, 30m) AS period, math::mean(value) AS avg_value
+         FROM historian WHERE topic IN ${JSON.stringify(sensors)}
+         AND time >= '${start.toISOString()}' AND time <= '${now.toISOString()}'
+         GROUP BY topic, period ORDER BY period ASC`
+      );
 
       return data;
     } catch (error) {
@@ -423,20 +404,12 @@ loadDashboardData();
 import { getOrInitializeSDK } from './sdk.service';
 import type { SDK } from '@machhub-dev/sdk-ts';
 
-export type AggregationType = 'avg' | 'min' | 'max' | 'sum' | 'count';
-
-export interface HistorianQuery {
-  tagName: string;
-  startTime: Date;
-  endTime: Date;
-  aggregation?: AggregationType;
-  interval?: string; // e.g., '1h', '15m', '1d'
-}
+export type AggregationType = 'avg' | 'min' | 'max' | 'sum';
 
 export interface HistorianDataPoint {
-  timestamp: Date;
+  hour: string;
   value: number;
-  quality?: 'good' | 'bad' | 'uncertain';
+  [key: string]: any;
 }
 
 class HistorianService {
@@ -449,29 +422,18 @@ class HistorianService {
     return this.sdk;
   }
 
+  private aggFn(aggregation: AggregationType): string {
+    const map = { avg: 'math::mean', min: 'math::min', max: 'math::max', sum: 'math::sum' };
+    return map[aggregation];
+  }
+
   /**
-   * Query historian data
+   * Execute a raw SurrealQL query against historian data
    */
-  async query(options: HistorianQuery): Promise<HistorianDataPoint[]> {
+  async query(surrealQL: string): Promise<any[]> {
     try {
       const sdk = await this.getSDK();
-      
-      let query = sdk.historian
-        .tag(options.tagName)
-        .from(options.startTime)
-        .to(options.endTime);
-
-      if (options.aggregation) {
-        query = query.aggregate(options.aggregation, options.interval || '1h');
-      }
-
-      const results = await query.execute();
-      
-      return results.map((point: any) => ({
-        timestamp: new Date(point.timestamp),
-        value: point.value,
-        quality: point.quality || 'good'
-      }));
+      return await sdk.historian.query(surrealQL);
     } catch (error) {
       console.error('Historian query failed:', error);
       throw error;
@@ -479,49 +441,47 @@ class HistorianService {
   }
 
   /**
-   * Get average value over time period
+   * Get aggregated values over time period
    */
   async getAverage(
-    tagName: string,
+    topic: string,
     startTime: Date,
     endTime: Date,
     interval: string = '1h'
   ): Promise<HistorianDataPoint[]> {
-    return await this.query({
-      tagName,
-      startTime,
-      endTime,
-      aggregation: 'avg',
-      interval
-    });
+    return this.query(
+      `SELECT time::floor(time, ${interval}) AS hour, math::mean(value) AS avg_value
+       FROM historian WHERE topic = '${topic}'
+       AND time >= '${startTime.toISOString()}' AND time <= '${endTime.toISOString()}'
+       GROUP BY hour ORDER BY hour ASC`
+    );
   }
 
   /**
    * Get min/max values
    */
   async getMinMax(
-    tagName: string,
+    topic: string,
     startTime: Date,
     endTime: Date
   ): Promise<{ min: number; max: number }> {
+    const sdk = await this.getSDK();
     const [minData, maxData] = await Promise.all([
-      this.query({
-        tagName,
-        startTime,
-        endTime,
-        aggregation: 'min'
-      }),
-      this.query({
-        tagName,
-        startTime,
-        endTime,
-        aggregation: 'max'
-      })
+      sdk.historian.query(
+        `SELECT math::min(value) AS min_value FROM historian
+         WHERE topic = '${topic}'
+         AND time >= '${startTime.toISOString()}' AND time <= '${endTime.toISOString()}'`
+      ),
+      sdk.historian.query(
+        `SELECT math::max(value) AS max_value FROM historian
+         WHERE topic = '${topic}'
+         AND time >= '${startTime.toISOString()}' AND time <= '${endTime.toISOString()}'`
+      )
     ]);
 
     return {
-      min: minData.length > 0 ? minData[0].value : 0,
-      max: maxData.length > 0 ? maxData[0].value : 0
+      min: minData[0]?.min_value ?? 0,
+      max: maxData[0]?.max_value ?? 0
     };
   }
 
@@ -529,48 +489,46 @@ class HistorianService {
    * Get data for the last N hours
    */
   async getLastHours(
-    tagName: string,
+    topic: string,
     hours: number,
-    aggregation?: AggregationType,
-    interval?: string
+    aggregation: AggregationType = 'avg',
+    interval: string = '1h'
   ): Promise<HistorianDataPoint[]> {
     const endTime = new Date();
     const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
 
-    return await this.query({
-      tagName,
-      startTime,
-      endTime,
-      aggregation,
-      interval
-    });
+    return this.query(
+      `SELECT time::floor(time, ${interval}) AS hour, ${this.aggFn(aggregation)}(value) AS value
+       FROM historian WHERE topic = '${topic}'
+       AND time >= '${startTime.toISOString()}' AND time <= '${endTime.toISOString()}'
+       GROUP BY hour ORDER BY hour ASC`
+    );
   }
 
   /**
    * Get data for today
    */
   async getToday(
-    tagName: string,
-    aggregation?: AggregationType
+    topic: string,
+    aggregation: AggregationType = 'avg'
   ): Promise<HistorianDataPoint[]> {
     const now = new Date();
     const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endTime = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
 
-    return await this.query({
-      tagName,
-      startTime,
-      endTime,
-      aggregation,
-      interval: '1h'
-    });
+    return this.query(
+      `SELECT time::floor(time, 1h) AS hour, ${this.aggFn(aggregation)}(value) AS value
+       FROM historian WHERE topic = '${topic}'
+       AND time >= '${startTime.toISOString()}' AND time <= '${endTime.toISOString()}'
+       GROUP BY hour ORDER BY hour ASC`
+    );
   }
 
   /**
    * Compare two time periods
    */
   async comparePeriods(
-    tagName: string,
+    topic: string,
     period1Start: Date,
     period1End: Date,
     period2Start: Date,
@@ -580,19 +538,22 @@ class HistorianService {
     period1: HistorianDataPoint[];
     period2: HistorianDataPoint[];
   }> {
+    const sdk = await this.getSDK();
+    const aggFn = this.aggFn(aggregation);
+
     const [period1, period2] = await Promise.all([
-      this.query({
-        tagName,
-        startTime: period1Start,
-        endTime: period1End,
-        aggregation
-      }),
-      this.query({
-        tagName,
-        startTime: period2Start,
-        endTime: period2End,
-        aggregation
-      })
+      sdk.historian.query(
+        `SELECT time::floor(time, 1h) AS hour, ${aggFn}(value) AS value
+         FROM historian WHERE topic = '${topic}'
+         AND time >= '${period1Start.toISOString()}' AND time <= '${period1End.toISOString()}'
+         GROUP BY hour ORDER BY hour ASC`
+      ),
+      sdk.historian.query(
+        `SELECT time::floor(time, 1h) AS hour, ${aggFn}(value) AS value
+         FROM historian WHERE topic = '${topic}'
+         AND time >= '${period2Start.toISOString()}' AND time <= '${period2End.toISOString()}'
+         GROUP BY hour ORDER BY hour ASC`
+      )
     ]);
 
     return { period1, period2 };
