@@ -1,16 +1,15 @@
 # MACHHUB SDK Authentication Templates
 
-Templates for implementing authentication, authorization, and user management.
+Templates for implementing authentication and session management.
 
 ## Templates
 
 ### 1. `auth.service.ts`
-**Complete authentication service**
+**Authentication service**
 - Login/logout
 - Current user management
-- Permission checking
-- Group membership
 - JWT validation
+- Session checking
 
 ### 2. `auth.context.ts`
 **Authentication state management**
@@ -18,20 +17,6 @@ Templates for implementing authentication, authorization, and user management.
 - Listener pattern
 - Login/logout handling
 - Initialization
-
-### 3. `auth.guard.ts`
-**Route protection and authorization**
-- Permission-based guards
-- Group-based guards
-- Predefined guard functions
-- Flexible authorization rules
-
-### 4. `user-management.service.ts`
-**User and group administration**
-- Group CRUD operations
-- User-group assignments
-- Permission management
-- Batch operations
 
 ## Usage
 
@@ -55,24 +40,8 @@ await authContext.login('user@example.com', 'password');
 const { user, isAuthenticated } = authContext.getState();
 ```
 
-### Route Guards
-
-```typescript
-import { requireAuth, requireAdmin, requirePermission } from './guards/auth.guard';
-
-// Check if user can access route
-const canAccess = await requireAuth();
-
-if (!canAccess) {
-  // Redirect to login
-  window.location.href = '/login';
-}
-
-// Check specific permission
-const canEdit = await requirePermission('products.edit')();
-```
-
 ## See Also
 
+- [machhub-sdk-authorization](../machhub-sdk-authorization/) - Permissions, groups, and access control
 - [machhub-sdk-initialization](../machhub-sdk-initialization/) - SDK setup
 - [Framework-specific guides](../) - Angular, React, Vue, Svelte implementations
