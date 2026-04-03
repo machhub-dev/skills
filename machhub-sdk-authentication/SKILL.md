@@ -388,4 +388,3 @@ unsubscribe();
 - **MACHHUB SDK Docs**: https://docs.machhub.dev
 - **Initialization Guide**: See `machhub-sdk-initialization`
 - **Permission & Group Management**: See `machhub-sdk-authorization`
-

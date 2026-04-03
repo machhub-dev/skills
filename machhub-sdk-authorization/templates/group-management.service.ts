@@ -20,12 +20,12 @@ class GroupManagementService {
     }
 
     /**
-     * Get the current permission set of a group.
+     * Get all permissions defined across the current domain.
      * Returns Feature[] — each entry has { name, action, scope }.
      */
-    async getGroupPermissions(groupId: string): Promise<Feature[]> {
+    async getDomainPermissions(): Promise<Feature[]> {
         const sdk = await getOrInitializeSDK();
-        return sdk.auth.getPermissions(groupId);
+        return sdk.auth.getPermissions();
     }
 
     /**

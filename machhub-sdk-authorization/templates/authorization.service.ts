@@ -8,7 +8,7 @@ class AuthorizationService {
      * Check if the current user has a specific permission.
      * @param feature - e.g. 'collections', 'flows', 'users'
      * @param action  - e.g. 'read', 'read-write', or a custom action string
-     * @param scope   - 'self' | 'domain' | 'nil'
+     * @param scope   - any string, e.g. 'self', 'domain', 'nil', or a custom scope
      */
     async canAccess(feature: string, action: string, scope: string): Promise<boolean> {
         try {
@@ -41,13 +41,13 @@ class AuthorizationService {
         return sdk.auth.getGroups();
     }
 
-    /** Fetch the permissions assigned to a specific group. */
-    async getGroupPermissions(groupId: string): Promise<Feature[]> {
+    /** Fetch all permissions defined in the current domain. */
+    async getDomainPermissions(): Promise<Feature[]> {
         try {
             const sdk = await getOrInitializeSDK();
-            return await sdk.auth.getPermissions(groupId);
+            return await sdk.auth.getPermissions();
         } catch (error) {
-            console.error('Failed to get group permissions:', error);
+            console.error('Failed to get domain permissions:', error);
             return [];
         }
     }

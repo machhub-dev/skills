@@ -24,7 +24,7 @@ This skill covers **authorization** operations in the MACHHUB SDK, including per
 **Key Concepts:**
 - **Feature** — a resource or capability (e.g. `"collections"`, `"users"`, `"flows"`)
 - **Action** — `"read"`, `"read-write"`, or any custom string
-- **Scope** — `"self"` (own data), `"domain"` (domain-wide), `"nil"` (no scope restriction)
+- **Scope** — `"self"` (own data), `"domain"` (domain-wide), `"nil"` (no scope restriction), or any custom string
 - **Group** — a named set of users sharing a set of permissions (FeatureAccess entries)
 
 ---
@@ -38,7 +38,7 @@ This skill covers **authorization** operations in the MACHHUB SDK, including per
 const { permission } = await sdk.auth.checkPermission(
   'collections',   // feature
   'read',          // action: 'read' | 'read-write' | custom
-  'domain'         // scope: 'self' | 'domain' | 'nil'
+  'domain'         // scope: any string — 'self', 'domain', 'nil', or custom
 );
 
 if (permission) {
@@ -62,15 +62,15 @@ Signature: `checkAction(feature: string, scope: string): Promise<ActionResponse>
 
 ## Group Permissions
 
-### Get Permissions for a Group
+### Get All Permissions in the Domain
 
 ```typescript
-// Returns Feature[] — the full permission set assigned to the group
-const permissions = await sdk.auth.getPermissions(groupId);
+// Returns Feature[] — all permissions defined across every group in the domain
+const permissions = await sdk.auth.getPermissions();
 // e.g. [{ name: 'collections', action: 'read-write', scope: 'domain' }, ...]
 ```
 
-Signature: `getPermissions(groupId: string): Promise<Feature[]>`
+Signature: `getPermissions(): Promise<Feature[]>`
 
 ### Add Permissions to a Group
 
@@ -215,10 +215,10 @@ class AuthorizationService {
     }
   }
 
-  async getGroupPermissions(groupId: string): Promise<Feature[]> {
+  async getDomainPermissions(): Promise<Feature[]> {
     try {
       const sdk = await getOrInitializeSDK();
-      return await sdk.auth.getPermissions(groupId);
+      return await sdk.auth.getPermissions();
     } catch {
       return [];
     }
@@ -286,7 +286,7 @@ class AuthorizationService {
    * Check if the current user has a specific permission.
    * @param feature - e.g. 'collections', 'flows', 'users'
    * @param action  - e.g. 'read', 'read-write', or a custom action string
-   * @param scope   - 'self' | 'domain' | 'nil'
+   * @param scope   - any string, e.g. 'self', 'domain', 'nil', or a custom scope
    */
   async canAccess(feature: string, action: string, scope: string): Promise<boolean> {
     try {
@@ -319,13 +319,13 @@ class AuthorizationService {
     return sdk.auth.getGroups();
   }
 
-  /** Fetch the permissions assigned to a specific group. */
-  async getGroupPermissions(groupId: string): Promise<Feature[]> {
+  /** Fetch all permissions defined in the current domain. */
+  async getDomainPermissions(): Promise<Feature[]> {
     try {
       const sdk = await getOrInitializeSDK();
-      return await sdk.auth.getPermissions(groupId);
+      return await sdk.auth.getPermissions();
     } catch (error) {
-      console.error('Failed to get group permissions:', error);
+      console.error('Failed to get domain permissions:', error);
       return [];
     }
   }
@@ -475,12 +475,12 @@ class GroupManagementService {
   }
 
   /**
-   * Get the current permission set of a group.
+   * Get all permissions defined across the current domain.
    * Returns Feature[] — each entry has { name, action, scope }.
    */
-  async getGroupPermissions(groupId: string): Promise<Feature[]> {
+  async getDomainPermissions(): Promise<Feature[]> {
     const sdk = await getOrInitializeSDK();
-    return sdk.auth.getPermissions(groupId);
+    return sdk.auth.getPermissions();
   }
 
   /**
@@ -541,7 +541,7 @@ You can also use custom feature names for your application-specific permissions.
 
 - [ ] `checkPermission` called before sensitive mutations
 - [ ] `checkAction` used to show/hide UI controls dynamically
-- [ ] `getPermissions` used when displaying a group's permission set
+- [ ] `getPermissions` used when displaying the domain's full permission set
 - [ ] `addPermissionsToGroup` uses valid scopes: `self`, `domain`, or `nil`
 - [ ] `createGroup` avoids the reserved name `"Superuser"`
 - [ ] User management operations gated behind appropriate permissions

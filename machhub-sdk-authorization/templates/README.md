@@ -21,7 +21,7 @@ Templates for implementing permission checks, group management, and access contr
 ### 3. `group-management.service.ts`
 **Group and permission administration**
 - Create groups
-- Fetch group permissions (`getPermissions`)
+- Fetch all domain permissions (`getPermissions`)
 - Add permissions to groups
 - Add users to groups
 
