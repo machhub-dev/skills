@@ -34,11 +34,6 @@ await sdk.tag.subscribe('temperature/room1', (data) => {
   console.log('Temperature update:', data);
   // { value: 25.5, timestamp: '2024-01-01T00:00:00Z' }
 });
-
-// Subscribe to multiple tags
-await sdk.tag.subscribe(['temperature/room1', 'humidity/room1'], (data) => {
-  console.log('Sensor update:', data);
-});
 ```
 
 ### Subscription with Topic Name
@@ -99,22 +94,12 @@ await sdk.tag.subscribe('building1/#', (data, topic) => {
 **CRITICAL:** Always unsubscribe when component unmounts to prevent memory leaks.
 
 ```typescript
-// Unsubscribe from specific tags
-sdk.tag.unsubscribe(['temperature/room1', 'humidity/room1']);
-
 // In application cleanup
 let sdk: SDK;
 
 async function setupSubscription() {
   sdk = await getOrInitializeSDK();
   await sdk.tag.subscribe('temperature/room1', handleUpdate);
-}
-
-// Call this when component/page unmounts or app closes
-function cleanup() {
-  if (sdk) {
-    sdk.tag.unsubscribe(['temperature/room1']);
-  }
 }
 
 setupSubscription();

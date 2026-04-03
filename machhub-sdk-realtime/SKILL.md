@@ -66,11 +66,6 @@ await sdk.tag.subscribe('temperature/room1', (data) => {
   console.log('Temperature update:', data);
   // { value: 25.5, timestamp: '2024-01-01T00:00:00Z' }
 });
-
-// Subscribe to multiple tags
-await sdk.tag.subscribe(['temperature/room1', 'humidity/room1'], (data) => {
-  console.log('Sensor update:', data);
-});
 ```
 
 ### Subscription with Topic Name
