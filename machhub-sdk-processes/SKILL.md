@@ -28,62 +28,70 @@ related_skills: [machhub-sdk-initialization, machhub-sdk-realtime, machhub-sdk-c
 ## Process Data Model
 
 ```typescript
+type ProcessLanguage = 'python' | 'typescript';
+type TriggerType     = 'cron' | 'interval' | 'tag_change' | 'http' | 'manual';
+type InputType       = 'tag' | 'sql';
+type OutputType      = 'sql' | 'tag_write';
+
+interface ProcessTrigger {
+  type: TriggerType;
+  config: TriggerConfig;
+}
+
+interface TriggerConfig {
+  cron_expression?: string;        // e.g. "*/5 * * * *"
+  interval_value?: number;         // e.g. 30
+  interval_unit?: string;          // "seconds" | "minutes" | "hours"
+  tag?: string;                    // e.g. "namespace/path/tag" (supports MQTT wildcards + and #)
+  endpoint?: string;               // e.g. "my-endpoint" → POST /process/my-endpoint
+}
+
+interface ProcessInput {
+  name: string;                    // accessible as context.inputs.name
+  type: InputType;
+  config: InputConfig;
+}
+
+interface InputConfig {
+  tag?: string;                    // for tag input: tag path
+  query?: string;                  // for sql input: SurrealDB query (domain-scoped)
+}
+
+interface ProcessOutput {
+  type: OutputType;
+  config: OutputConfig;
+}
+
+interface OutputConfig {
+  query?: string;                  // for sql: supports {{output.field}} placeholders
+  tag?: string;                    // for tag_write: tag path
+  field?: string;                  // for tag_write: dot-notation path in return value e.g. "result.value"
+}
+
+interface ProcessKey   { key: string; }
+interface ProcessValue { value: string; }
+
 interface Process {
-  id: string;                        // "processes:xxx"
-  name: string;                      // stored as "domainID.processName"
-  language: 'python' | 'typescript';
-  enabled: boolean;                  // auto-execution on/off
-  log_enabled: boolean;              // execution logging on/off
-  code: string;                      // user code body
-  version: number;                   // auto-incremented on code change
-  triggers: Trigger[];
-  inputs: Input[];
-  outputs: Output[];
-}
-
-interface Trigger {
-  type: 'cron' | 'interval' | 'tag_change' | 'http';  // configurable trigger types
-  config: {
-    cron_expression?: string;        // e.g. "*/5 * * * *"
-    interval_value?: number;         // e.g. 30
-    interval_unit?: 'seconds' | 'minutes' | 'hours';
-    tag?: string;                    // e.g. "namespace/path/tag" (supports MQTT wildcards + and #)
-    endpoint?: string;               // e.g. "my-endpoint" → POST /process/my-endpoint
-  };
-  // Runtime-only — present in worker context, never persisted
-  data?: {
-    // tag_change: full MQTT packet metadata
-    topic?: string;                  // concrete topic that fired the trigger
-    payload?: unknown;               // decoded JSON value, or raw string
-    retain?: boolean;
-    content_type?: string;
-    user_properties?: Record<string, string>;
-    // http: request details
-    method?: string;                 // e.g. "POST"
-    headers?: Record<string, string>;// first value per header name
-    query?: Record<string, string>;  // URL query params
-    body?: Record<string, unknown>;  // parsed JSON request body
-  };
-}
-
-interface Input {
-  name: string;                      // accessible as context.inputs.name
-  type: 'tag' | 'sql';
-  config: {
-    tag?: string;                    // for tag input: tag path
-    query?: string;                  // for sql input: SurrealDB query (domain-scoped)
-  };
-}
-
-interface Output {
-  type: 'sql' | 'tag_write';
-  config: {
-    query?: string;                  // for sql: supports {{output.field}} placeholders
-    tag?: string;                    // for tag_write: tag path
-    field?: string;                  // for tag_write: dot-notation path in return value e.g. "result.value"
-  };
+  id?: string;                     // "processes:xxx" — assigned by server
+  domain_id?: string;              // owning domain record ID
+  name: string;                    // stored as "domainKey.processName"
+  language: ProcessLanguage;
+  enabled: boolean;                // auto-execution on/off
+  log_enabled: boolean;            // execution logging on/off
+  code: string;                    // user code body
+  version: number;                 // auto-incremented on code change
+  triggers: ProcessTrigger[];
+  inputs: ProcessInput[];
+  outputs: ProcessOutput[];
+  keys?: ProcessKey[];             // per-process environment keys
+  values?: ProcessValue[];         // per-process environment values
+  createdBy?: string;              // creator record ID
+  createdDt?: string;              // ISO 8601 creation timestamp
+  updated_dt?: string;             // ISO 8601 last-updated timestamp
 }
 ```
+
+> **Trigger runtime `data`** — the `data` field is populated at execution time and is never persisted. See each trigger type's section below for its shape.
 
 ---
 
@@ -389,6 +397,114 @@ config.tag: "alerts/room1/status"
 config.field: "status"             # dot-notation: "result.nested.value" also works
 ```
 Writes `returnValue.status` to the tag `alerts/room1/status`.
+
+---
+
+## SDK Client API (`sdk.processes`)
+
+After initializing the SDK, the `processes` namespace exposes three methods for managing and invoking processes from the frontend.
+
+### `sdk.processes.execute(name, input?)`
+
+Executes a process by name with optional input data. Works for any process regardless of its configured triggers.
+
+```typescript
+// Execute a process (no input)
+const result = await sdk.processes.execute('mydomainkey.processName');
+
+// Execute a process with input data
+const result = await sdk.processes.execute('mydomainkey.calculateOEE', {
+  lineId: 'line1',
+  shift: 'morning'
+});
+```
+
+**Signature:**
+```typescript
+execute(name: string, input?: Record<string, any>): Promise<any>
+```
+
+- `name` — the process name in `"domainKey.processName"` format
+- `input` — optional key/value pairs merged into `context.inputs` (override/supplement configured inputs)
+- Returns the process return value directly
+
+---
+
+### `sdk.processes.getProcesses()`
+
+Retrieves all processes belonging to the current domain.
+
+```typescript
+const processes: Process[] = await sdk.processes.getProcesses();
+
+for (const p of processes) {
+  console.log(p.name, p.language, p.enabled, p.version);
+}
+```
+
+**Signature:**
+```typescript
+getProcesses(): Promise<Process[]>
+```
+
+---
+
+### `sdk.processes.changeTriggers(id, triggers)`
+
+Replaces the trigger list for a specific process. Overwrites all existing triggers with the provided array.
+
+```typescript
+import type { ProcessTrigger } from '@machhub-dev/sdk-ts';
+
+const newTriggers: ProcessTrigger[] = [
+  {
+    type: 'cron',
+    config: { cron_expression: '0 * * * *' }   // every hour
+  },
+  {
+    type: 'tag_change',
+    config: { tag: 'sensors/+/temperature' }
+  }
+];
+
+const updated: Process = await sdk.processes.changeTriggers('processes:abc123', newTriggers);
+```
+
+**Signature:**
+```typescript
+changeTriggers(id: RecordID, triggers: ProcessTrigger[]): Promise<Process>
+```
+
+- `id` — process record ID (string `"processes:xxx"` or `RecordID` object)
+- `triggers` — full replacement trigger list (empty array `[]` removes all triggers)
+- Returns the updated `Process` object
+
+---
+
+### Type Exports
+
+The following types are exported from `@machhub-dev/sdk-ts` for use with the processes API:
+
+```typescript
+import {
+  Process,           // main process record interface
+  ProcessTrigger,    // { type: TriggerType; config: TriggerConfig }
+} from '@machhub-dev/sdk-ts';
+
+import type {
+  ProcessLanguage,   // 'python' | 'typescript'
+  TriggerType,       // 'cron' | 'interval' | 'tag_change' | 'http' | 'manual'
+  TriggerConfig,     // cron_expression, interval_value/unit, tag, endpoint
+  InputType,         // 'tag' | 'sql'
+  InputConfig,       // tag, query
+  ProcessInput,      // name, type, config
+  OutputType,        // 'sql' | 'tag_write'
+  OutputConfig,      // query, tag, field
+  ProcessOutput,     // type, config
+  ProcessKey,        // { key: string }
+  ProcessValue,      // { value: string }
+} from '@machhub-dev/sdk-ts';
+```
 
 ---
 
