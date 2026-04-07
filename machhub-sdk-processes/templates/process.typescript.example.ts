@@ -8,8 +8,10 @@
  *
  * inputs   — resolved input values (tag reads, SQL results, HTTP body fields).
  *            'inputs' is destructured from 'context' by the wrapper.
- * trigger  — trigger metadata: { type, config }.
+ * trigger  — trigger metadata: { type, config, data }.
  *            'trigger' is destructured from 'context' by the wrapper.
+ *            trigger.data is runtime-only and contains MQTT packet info (tag_change)
+ *            or HTTP request details (http trigger).
  * context  — full context object (also has: timestamp, domain_id, process_name)
  *
  * Return value → processed by your configured Outputs (SQL writes, tag writes).
@@ -18,6 +20,10 @@
  *   The MACHHUB SDK is auto-injected as the global `sdk`.
  *   No import or initialization needed.
  *   Example: await sdk.collection("myapp.data").getAll()
+ *
+ * Wildcard tag inputs:
+ *   A tag input with a wildcard path (e.g. "sensors/+/temperature") resolves to
+ *   a map of matching topics: { "sensors/room1/temperature": 25.4, ... }
  */
 
 // ---------------------------------------------------------------------------
@@ -31,8 +37,22 @@ interface ProcessContext {
             cron_expression?: string;
             interval_value?: number;
             interval_unit?: string;
-            tag?: string;       // tag path for tag_change triggers
+            tag?: string;       // tag path for tag_change triggers (supports MQTT wildcards + and #)
             endpoint?: string;  // endpoint slug for http triggers
+        };
+        // Runtime-only — populated per invocation, never persisted
+        data?: {
+            // tag_change: MQTT packet metadata
+            topic?: string;                       // concrete topic that fired (useful when using wildcards)
+            payload?: unknown;                    // decoded JSON value or raw string
+            retain?: boolean;
+            content_type?: string;
+            user_properties?: Record<string, string>;
+            // http: request details
+            method?: string;
+            headers?: Record<string, string>;     // first value per header name
+            query?: Record<string, string>;       // URL query params
+            body?: Record<string, unknown>;       // parsed JSON request body
         };
     };
     timestamp: string;
@@ -140,3 +160,46 @@ if (latest && latest.value > 90) {
 }
 
 return { processed: records.length };
+
+// ---------------------------------------------------------------------------
+// Example 5: Wildcard tag input
+// Trigger:  cron
+// Input:    tag input named "allTemps" with config.tag = "sensors/+/temperature"
+//           → resolves to a map: { "sensors/room1/temperature": 25.4, ... }
+// Output:   none
+// ---------------------------------------------------------------------------
+const allTemps = inputs.allTemps as Record<string, number>;
+
+const entries = Object.entries(allTemps);
+const avg = entries.reduce((sum, [, v]) => sum + v, 0) / entries.length;
+
+console.log(`Average temperature across ${entries.length} sensors: ${avg.toFixed(2)}°C`);
+return { count: entries.length, average: parseFloat(avg.toFixed(4)), readings: allTemps };
+
+// ---------------------------------------------------------------------------
+// Example 6: Accessing trigger.data in a tag_change process
+// Trigger:  tag_change on "production/+/status"
+// Input:    none
+// Output:   none
+// ---------------------------------------------------------------------------
+const topic = trigger.data?.topic ?? 'unknown';          // e.g. "production/line1/status"
+const newPayload = trigger.data?.payload;                // decoded JSON or raw string
+const userProps = trigger.data?.user_properties ?? {};
+
+console.log(`Tag change on ${topic}: ${JSON.stringify(newPayload)}`);
+
+// Extract the line segment from the wildcard topic
+const line = topic.split('/')[1] ?? 'unknown';
+return { line, status: newPayload, topic };
+
+// ---------------------------------------------------------------------------
+// Example 7: Accessing trigger.data in an HTTP process
+// Trigger:  http "process-order"  →  POST /process/process-order
+// Input:    none (body fields arrive in inputs AND trigger.data.body)
+// Output:   sql
+// ---------------------------------------------------------------------------
+const orderId = inputs.orderId as string;    // from HTTP body (via inputs merge)
+const queryParam = trigger.data?.query?.['debug'] === 'true';
+
+console.log(`Processing order ${orderId}, debug=${queryParam}`);
+return { orderId, processed: true };

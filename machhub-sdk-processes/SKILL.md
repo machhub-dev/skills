@@ -47,8 +47,22 @@ interface Trigger {
     cron_expression?: string;        // e.g. "*/5 * * * *"
     interval_value?: number;         // e.g. 30
     interval_unit?: 'seconds' | 'minutes' | 'hours';
-    tag?: string;                    // e.g. "namespace/path/tag"
+    tag?: string;                    // e.g. "namespace/path/tag" (supports MQTT wildcards + and #)
     endpoint?: string;               // e.g. "my-endpoint" → POST /process/my-endpoint
+  };
+  // Runtime-only — present in worker context, never persisted
+  data?: {
+    // tag_change: full MQTT packet metadata
+    topic?: string;                  // concrete topic that fired the trigger
+    payload?: unknown;               // decoded JSON value, or raw string
+    retain?: boolean;
+    content_type?: string;
+    user_properties?: Record<string, string>;
+    // http: request details
+    method?: string;                 // e.g. "POST"
+    headers?: Record<string, string>;// first value per header name
+    query?: Record<string, string>;  // URL query params
+    body?: Record<string, unknown>;  // parsed JSON request body
   };
 }
 
@@ -92,12 +106,24 @@ interval_value: 1,  interval_unit: "hours"    → every hour
 ```
 
 ### Tag Change
-Fires whenever a tag value changes (MQTT subscription).
+Fires whenever a tag value changes (MQTT subscription). Supports MQTT wildcards in the tag path.
 ```
-tag: "production/line1/status"
-tag: "temperature/room1"
+tag: "production/line1/status"       — exact topic
+tag: "production/+/status"           — single-level wildcard (one segment)
+tag: "production/#"                  — multi-level wildcard (all subtopics)
 ```
-> The new value is **not** injected into the trigger context. Add a tag Input with the same tag path to read the current value into `inputs`.
+> The new value can be accessed from `trigger.data.payload` directly.
+
+**`trigger.data` available in worker context:**
+```typescript
+trigger.data = {
+  topic:           string,                   // concrete topic that fired, e.g. "production/line1/status"
+  payload:         unknown,                  // decoded JSON value or raw string
+  retain:          boolean,
+  content_type:    string | undefined,
+  user_properties: Record<string, string>    // MQTT 5 user properties (flat map)
+}
+```
 
 ### HTTP Trigger
 Exposes a POST endpoint on MACHHUB:
@@ -108,11 +134,22 @@ endpoint: "calculate-oee"
 endpoint: "oee/line1"
 → POST /process/oee/line1
 ```
-The request body (JSON) is merged into `context.inputs` — each top-level key becomes an input override.  
-The process return value is sent back as the HTTP response body.
+The request body (JSON) is merged into `context.inputs` — each top-level key becomes an input override (highest precedence over configured inputs).  
+The process return value is sent back as the HTTP response body **immediately** — outputs (SQL writes, tag writes) execute asynchronously in the background.
 
 Endpoint slugs must be **lowercase alphanumeric, hyphens, and forward-slashes** for multi-level grouping.
 Pattern: `^[a-z0-9-]+(/[a-z0-9-]+)*$`  No leading/trailing slashes.
+
+**`trigger.data` available in worker context:**
+```typescript
+trigger.data = {
+  method:  string,                         // "POST"
+  headers: Record<string, string>,         // first value per header name
+  query:   Record<string, string>,         // URL query params
+  body:    Record<string, unknown>         // parsed JSON request body
+}
+```
+> Body fields are also merged into `inputs` — `trigger.data.body` and `inputs` overlap. Use `inputs` for convenience, `trigger.data` for raw request inspection (headers, query params, method).
 
 ### Manual Execution
 Processes with **no triggers** configured can still be run on demand:
@@ -149,6 +186,20 @@ interface ProcessContext {
       interval_unit?: string;    // set for interval triggers
       tag?: string;              // set for tag_change triggers
       endpoint?: string;         // set for http triggers
+    };
+    // Runtime-only — never persisted; populated per invocation
+    data?: {
+      // tag_change
+      topic?: string;            // concrete topic that fired
+      payload?: unknown;         // decoded JSON or raw string
+      retain?: boolean;
+      content_type?: string;
+      user_properties?: Record<string, string>;
+      // http
+      method?: string;
+      headers?: Record<string, string>;
+      query?: Record<string, string>;
+      body?: Record<string, unknown>;
     };
   };
   timestamp: string;             // ISO 8601 execution timestamp
@@ -228,6 +279,20 @@ context = {
             'tag':             '...',  # set for tag_change; or
             'endpoint':        '...',  # set for http
         },
+        # Runtime-only — populated per invocation, never persisted
+        'data': {
+            # tag_change
+            'topic':           '...',  # concrete topic that fired
+            'payload':         ...,    # decoded JSON value or raw string
+            'retain':          False,
+            'content_type':    '...',
+            'user_properties': {},     # MQTT 5 user properties (flat dict)
+            # http
+            'method':          'POST',
+            'headers':         {},     # first value per header name
+            'query':           {},     # URL query params
+            'body':            {},     # parsed JSON request body
+        },
     },
     'timestamp':    '2026-04-02T...', # ISO 8601
     'domain_id':    'domains:xxx',
@@ -267,7 +332,9 @@ See full example: [process.python.example.py](./templates/process.python.example
 Inputs are resolved **before** your code runs and injected into `context.inputs`.
 
 ### Tag Input
-Reads the current value of a tag:
+Reads the current value of a tag. Supports MQTT wildcards (`+` and `#`).
+
+**Exact tag path:**
 ```
 name: "temperature"
 type: "tag"
@@ -275,6 +342,20 @@ config.tag: "sensors/room1/temperature"
 
 → context.inputs.temperature = 25.4
 ```
+
+**Wildcard tag path** — returns a map keyed by concrete topic:
+```
+name: "allRoomTemps"
+type: "tag"
+config.tag: "sensors/+/temperature"
+
+→ context.inputs.allRoomTemps = {
+     "sensors/room1/temperature": 25.4,
+     "sensors/room2/temperature": 22.1,
+     ...
+   }
+```
+`+` matches a single topic level; `#` matches all remaining levels (multi-level). The result is always a `Record<string, any>` / `dict` keyed by the matching topic string.
 
 ### SQL Input
 Runs a SurrealDB query (domain-scoped — can only access tables in your domain):
@@ -344,6 +425,23 @@ const response = await fetch(`${MACHHUB_URL}/machhub/processes/execute`, {
 });
 const result = await response.json();
 ```
+
+---
+
+## Execution Behaviour
+
+### Async outputs (HTTP and Execute-by-Name)
+For HTTP-triggered processes and execute-by-name calls the function **return value is sent to the caller immediately** after your code completes. Outputs (SQL writes, tag writes) then run asynchronously in the background. Your code does not wait for them. This keeps HTTP latency low; errors in outputs are logged but do not affect the HTTP response.
+
+For all other trigger types (cron, interval, tag_change, manual from the UI) outputs are synchronous — an output error will propagate and be logged.
+
+### Domain Worker Lifecycle
+Each domain runs its own isolated Python and TypeScript worker processes. Workers are:
+- **Started automatically** when the first process for a domain is created or enabled.
+- **Stopped automatically** when the last process for a domain is deleted or all are disabled.
+- **Restarted** after package installation (Python `pip install`, TypeScript `npm install`).
+
+Workers communicate with the MACHHUB API via per-domain NATS subjects. Each domain has its own `venv` (Python) and `node_modules` (TypeScript) directory.
 
 ---
 
