@@ -30,7 +30,7 @@ class ProcessService {
      * Execute a process by its domain-scoped name.
      * Works for any trigger type (manual, cron, interval, http, tag_change).
      *
-     * @param name - "domainKey.processName" e.g. "myapp.calculateKpi"
+     * @param name - process name e.g. "calculateKpi"
      * @param input - Optional input overrides merged with configured inputs
      */
     async execute<T = unknown>(
@@ -91,7 +91,7 @@ export const processService = new ProcessService();
 // ---------------------------------------------------------------------------
 
 // 1. Execute any process by name
-const kpiResult = await processService.execute<{ oee: number; }>('myapp.calculateKpi', {
+const kpiResult = await processService.execute<{ oee: number; }>('calculateKpi', {
     line: 'line1',
     date: '2026-03-26'
 });

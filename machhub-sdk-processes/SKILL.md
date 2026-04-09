@@ -410,10 +410,10 @@ Executes a process by name with optional input data. Works for any process regar
 
 ```typescript
 // Execute a process (no input)
-const result = await sdk.processes.execute('mydomainkey.processName');
+const result = await sdk.processes.execute('processName');
 
 // Execute a process with input data
-const result = await sdk.processes.execute('mydomainkey.calculateOEE', {
+const result = await sdk.processes.execute('calculateOEE', {
   lineId: 'line1',
   shift: 'morning'
 });
@@ -424,7 +424,7 @@ const result = await sdk.processes.execute('mydomainkey.calculateOEE', {
 execute(name: string, input?: Record<string, any>): Promise<any>
 ```
 
-- `name` — the process name in `"domainKey.processName"` format
+- `name` — the process name (e.g. `"processName"`)
 - `input` — optional key/value pairs merged into `context.inputs` (override/supplement configured inputs)
 - Returns the process return value directly
 
@@ -521,23 +521,6 @@ const response = await fetch(`${MACHHUB_URL}/process/my-endpoint`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ param1: 'value1' })
-});
-const result = await response.json();
-```
-
-### Execute by Name (any process)
-```typescript
-// Execute any process by its name (domain-scoped)
-const response = await fetch(`${MACHHUB_URL}/machhub/processes/execute`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  },
-  body: JSON.stringify({
-    name: 'mydomainkey.processName',  // format: "domainKey.processName"
-    input: { param1: 'value1' }       // overrides/supplements process inputs
-  })
 });
 const result = await response.json();
 ```
@@ -674,4 +657,4 @@ const workerWs = new WebSocket(
 ### Pattern: Invoke from Frontend
 1. Create a process with no triggers (or any trigger type)
 2. Use the [process-execute.service.ts](./templates/process-execute.service.ts) template
-3. Call `processService.execute('domainKey.processName', inputData)` from your component
+3. Call `processService.execute('processName', inputData)` from your component
