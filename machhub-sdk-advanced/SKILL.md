@@ -1,6 +1,6 @@
 ---
 name: machhub-sdk-advanced
-description: Advanced MACHHUB SDK features including Historian queries, remote functions, workflow execution, and time-series data analysis.
+description: Advanced MACHHUB SDK features including Historian queries, CSV export, remote functions, workflow execution, and time-series data analysis.
 related_skills: [machhub-sdk-initialization, machhub-sdk-realtime]
 ---
 
@@ -220,6 +220,123 @@ class AnalyticsService {
 }
 
 export const analyticsService = new AnalyticsService();
+```
+
+---
+
+## Export Historical Data as CSV
+
+### getHistoricalDataAsCSV
+
+Export historized data for one or more topics as a **gzipped CSV Blob**. When multiple topics are provided, they are merged into a single CSV with columns: `[Timestamp, topic1, topic2, ...]`. Supports optional time bucketing (`sampleRate`) and aggregation.
+
+```typescript
+const sdk = await getOrInitializeSDK();
+
+const blob = await sdk.historian.getHistoricalDataAsCSV(
+  ['Sensor/Temperature', 'Sensor/Humidity'],
+  new Date('2024-01-01T00:00:00Z'),
+  new Date('2024-01-02T00:00:00Z')
+);
+```
+
+### Method Signature
+
+```typescript
+getHistoricalDataAsCSV(
+  topics: string[],
+  startDate: Date,
+  endDate: Date,
+  timezone?: string,
+  sampleRate?: string,
+  aggregation?: 'mean' | 'sum' | 'min' | 'max' | 'median' | 'none',
+  mapping?: Record<string, string>,
+): Promise<Blob>
+```
+
+### Parameters
+
+| Parameter     | Type                                              | Required | Description |
+| ------------- | ------------------------------------------------- | -------- | ----------- |
+| `topics`      | `string[]`                                        | ✅        | Array of topic strings to export |
+| `startDate`   | `Date`                                            | ✅        | Start of the data range |
+| `endDate`     | `Date`                                            | ✅        | End of the data range |
+| `timezone`    | `string`                                          | ❌        | IANA timezone string (e.g. `"Asia/Kuala_Lumpur"`) |
+| `sampleRate`  | `string`                                          | ❌        | Bucket interval in underscore format (e.g. `"5_second"`, `"1_minute"`, `"1_hour"`) |
+| `aggregation` | `'mean'\|'sum'\|'min'\|'max'\|'median'\|'none'`  | ❌        | Aggregation function applied within each bucket |
+| `mapping`     | `Record<string, string>`                          | ❌        | Rename topic columns in the CSV header (e.g. `{ "Sensor/Temperature": "Temp °C" }`) |
+
+### sampleRate Format
+
+| Value         | Meaning      |
+| ------------- | ------------ |
+| `"5_second"`  | 5-second buckets |
+| `"1_minute"`  | 1-minute buckets |
+| `"15_minute"` | 15-minute buckets |
+| `"1_hour"`    | 1-hour buckets |
+| `"1_day"`     | Daily buckets |
+
+### Examples
+
+**Single topic export:**
+
+```typescript
+const blob = await sdk.historian.getHistoricalDataAsCSV(
+  ['Sensor/Temperature'],
+  new Date('2024-01-01'),
+  new Date('2024-01-31')
+);
+```
+
+**Multiple topics with timezone and column renaming:**
+
+```typescript
+const blob = await sdk.historian.getHistoricalDataAsCSV(
+  ['Sensor/Temperature', 'Sensor/Humidity', 'Sensor/Pressure'],
+  new Date('2024-01-01'),
+  new Date('2024-01-31'),
+  'Asia/Kuala_Lumpur',
+  undefined,
+  undefined,
+  {
+    'Sensor/Temperature': 'Temp °C',
+    'Sensor/Humidity': 'Humidity %',
+    'Sensor/Pressure': 'Pressure hPa',
+  }
+);
+```
+
+**Hourly average with aggregation:**
+
+```typescript
+const blob = await sdk.historian.getHistoricalDataAsCSV(
+  ['production/line1', 'production/line2'],
+  new Date('2024-01-01'),
+  new Date('2024-01-07'),
+  'UTC',
+  '1_hour',
+  'mean'
+);
+```
+
+**Trigger a browser download (browser environments):**
+
+```typescript
+const blob = await sdk.historian.getHistoricalDataAsCSV(
+  ['Sensor/Temperature'],
+  startDate,
+  endDate,
+  'Asia/Kuala_Lumpur',
+  '1_minute',
+  'mean'
+);
+
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'sensor_data.csv.gz';
+a.click();
+URL.revokeObjectURL(url);
 ```
 
 ---
@@ -1254,6 +1371,164 @@ const page = DataTransform.paginate(products, 1, 2);
 const prices = products.map(p => p.price);
 const stats = DataTransform.stats(prices);
 // { min: 50, max: 200, avg: 116.67, sum: 350, count: 3 }
+```
+
+---
+
+### Template 5: CSV Export Service
+
+**File:** `src/services/csv-export.service.ts`
+
+**Purpose:** Service for exporting historized tag data as gzipped CSV files
+
+**Code:**
+
+```typescript
+// filepath: src/services/csv-export.service.ts
+import { getOrInitializeSDK } from './sdk.service';
+
+export type AggregationType = 'mean' | 'sum' | 'min' | 'max' | 'median' | 'none';
+
+export interface CSVExportOptions {
+  timezone?: string;
+  sampleRate?: string;
+  aggregation?: AggregationType;
+  mapping?: Record<string, string>;
+}
+
+class CSVExportService {
+  /**
+   * Export historized data for one or more topics as a gzipped CSV Blob.
+   */
+  async exportToBlob(
+    topics: string[],
+    startDate: Date,
+    endDate: Date,
+    options: CSVExportOptions = {}
+  ): Promise<Blob> {
+    const sdk = await getOrInitializeSDK();
+    return sdk.historian.getHistoricalDataAsCSV(
+      topics,
+      startDate,
+      endDate,
+      options.timezone,
+      options.sampleRate,
+      options.aggregation as any,
+      options.mapping
+    );
+  }
+
+  /**
+   * Trigger a browser download of the exported CSV (browser environments only).
+   */
+  async downloadCSV(
+    topics: string[],
+    startDate: Date,
+    endDate: Date,
+    filename: string = 'export.csv.gz',
+    options: CSVExportOptions = {}
+  ): Promise<void> {
+    const blob = await this.exportToBlob(topics, startDate, endDate, options);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+export const csvExportService = new CSVExportService();
+```
+
+**Usage:**
+
+```typescript
+import { csvExportService } from './services/csv-export.service';
+
+// Basic export
+const blob = await csvExportService.exportToBlob(
+  ['Sensor/Temperature', 'Sensor/Humidity'],
+  new Date('2024-01-01'),
+  new Date('2024-01-31')
+);
+
+// Download with hourly aggregation and column renaming
+await csvExportService.downloadCSV(
+  ['Sensor/Temperature', 'Sensor/Humidity'],
+  new Date('2024-01-01'),
+  new Date('2024-01-07'),
+  'temperature_humidity_jan.csv.gz',
+  {
+    timezone: 'Asia/Kuala_Lumpur',
+    sampleRate: '1_hour',
+    aggregation: 'mean',
+    mapping: {
+      'Sensor/Temperature': 'Temp °C',
+      'Sensor/Humidity': 'Humidity %',
+    },
+  }
+);
+```
+
+**Direct SDK usage — calling `getHistoricalDataAsCSV` without the service wrapper:**
+
+```typescript
+// Helper: triggers a browser file download from a Blob or string
+function triggerDownload(data: Blob | string, fileName: string) {
+  const blob =
+    typeof data === 'string' ? new Blob([data], { type: 'text/csv' }) : data;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const TAGS = [
+  'Sensors/Temperature',
+  'Sensors/Humidity',
+  'Sensors/CO2',
+  'Sensors/Pressure',
+  'Sensors/AirQuality',
+  'Sensors/PowerUsage',
+];
+
+const rangeStart = new Date('2024-01-01');
+const rangeEnd   = new Date('2024-01-07');
+const sampleRate = '1_hour';   // e.g. '1_hour', '15_minutes' — pass undefined to skip
+const aggregation = 'mean';    // e.g. 'mean', 'sum', 'min', 'max' — pass undefined to skip
+
+// Request the export blob
+const blob = await (sdk.historian as any).getHistoricalDataAsCSV(
+  TAGS,
+  rangeStart,
+  rangeEnd,
+  undefined,           // timezone (optional)
+  sampleRate || undefined,
+  aggregation || undefined,
+  {
+    'Sensors/Temperature': 'Temp °C',
+    'Sensors/Humidity':    'Humidity %',
+    'Sensors/CO2':         'CO2 ppm',
+    'Sensors/Pressure':    'Pressure hPa',
+    'Sensors/AirQuality':  'Air Quality',
+    'Sensors/PowerUsage':  'Power kW',
+  }
+);
+
+console.log('[Export] Received blob', { size: blob.size, type: blob.type });
+
+// The server sets Content-Encoding: gzip, so the browser's fetch already
+// decompresses the body transparently — the blob is plain CSV at this point.
+const csvBlob = new Blob([blob], { type: 'text/csv' });
+
+const from = rangeStart.toISOString().slice(0, 10);
+const to   = rangeEnd.toISOString().slice(0, 10);
+triggerDownload(csvBlob, `export-${from}_${to}.csv`);
 ```
 
 ---
