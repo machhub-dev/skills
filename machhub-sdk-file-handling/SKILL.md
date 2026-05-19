@@ -113,8 +113,9 @@ const product = await collection.getOne('myapp.products:PROD-001');
 if (product.image) {
   // Get the actual file as Blob
   const imageBlob = await collection.getFile(
-    product.image,    // fileName (string from API response)
-    'image'           // fieldName in collection
+    product.image,              // fileName (string from API response)
+    'image',                    // fieldName in collection
+    'myapp.products:PROD-001'  // recordID (full record ID)
   );
 
   // Create object URL for display
@@ -170,7 +171,8 @@ class FileService {
   async getFile(
     collectionName: string,
     fileName: string,
-    fieldName: string
+    fieldName: string,
+    recordID: string
   ): Promise<Blob | null> {
     if (!fileName) return null;
 
@@ -178,7 +180,7 @@ class FileService {
       const sdk = await getOrInitializeSDK();
       const collection = sdk.collection(collectionName);
       
-      return await collection.getFile(fileName, fieldName);
+      return await collection.getFile(fileName, fieldName, recordID);
     } catch (error) {
       console.error('Error retrieving file:', error);
       throw error;
@@ -191,10 +193,11 @@ class FileService {
   async getFileUrl(
     collectionName: string,
     fileName: string,
-    fieldName: string
+    fieldName: string,
+    recordID: string
   ): Promise<string | null> {
     try {
-      const blob = await this.getFile(collectionName, fileName, fieldName);
+      const blob = await this.getFile(collectionName, fileName, fieldName, recordID);
       if (!blob) return null;
       
       return URL.createObjectURL(blob);
@@ -211,10 +214,11 @@ class FileService {
     collectionName: string,
     fileName: string,
     fieldName: string,
+    recordID: string,
     downloadName?: string
   ): Promise<void> {
     try {
-      const blob = await this.getFile(collectionName, fileName, fieldName);
+      const blob = await this.getFile(collectionName, fileName, fieldName, recordID);
       if (!blob) throw new Error('File not found');
 
       // Create download link
@@ -265,13 +269,14 @@ export interface Product {
 class ProductService extends BaseService {
   private collectionName = 'products';
 
-  async getProductImage(product: Product): Promise<string | null> {
+  async getProductImage(product: Product, recordID: string): Promise<string | null> {
     if (!product.image) return null;
     
     return await fileService.getFileUrl(
       this.collectionName,
       product.image,
-      'image'
+      'image',
+      recordID
     );
   }
 
@@ -296,6 +301,7 @@ class ProductService extends BaseService {
       this.collectionName,
       product.manual,
       'manual',
+      product.id,  // recordID
       `${product.name}_manual.pdf`
     );
   }
@@ -526,7 +532,6 @@ export interface FileMetadata {
   filename: string;
   size: number;
   type: string;
-  url: string;
   uploadedAt: Date;
 }
 
@@ -558,22 +563,16 @@ class FileUploadService {
       const sdk = await this.getSDK();
       const fullId = `myapp.${collectionName}:${recordId}`;
 
-      // Upload file
-      const result = await sdk.collection(collectionName).uploadFile(
-        fullId,
-        fieldName,
-        file
-      );
-
-      // Get file URL
-      const url = sdk.collection(collectionName).getFileURL(fullId, fieldName);
+      // Upload file via update() with File object
+      const result = await sdk.collection(collectionName).update(fullId, {
+        [fieldName]: file
+      });
 
       return {
         id: result.id || recordId,
         filename: file.name,
         size: file.size,
         type: file.type,
-        url,
         uploadedAt: new Date()
       };
     } catch (error: any) {
@@ -657,7 +656,12 @@ class FileUploadService {
       const sdk = await this.getSDK();
       const fullId = `myapp.${collectionName}:${recordId}`;
       
-      return await sdk.collection(collectionName).getFile(fullId, fieldName);
+      // Fetch the record to get the stored filename
+      const record = await sdk.collection(collectionName).getOne(fullId);
+      const fileName = record[fieldName];
+      if (!fileName) throw new Error(`No file found in field '${fieldName}'`);
+      
+      return await sdk.collection(collectionName).getFile(fileName, fieldName, fullId);
     } catch (error) {
       console.error('Failed to get file:', error);
       throw error;
@@ -666,28 +670,20 @@ class FileUploadService {
 
   /**
    * Get file URL
+   * NOTE: The SDK does not provide a direct URL method. Use getFile() to
+   * retrieve a Blob and create an object URL with URL.createObjectURL(blob).
    */
-  getFileURL(
+  async getFileURL(
     collectionName: string,
     recordId: string,
     fieldName: string
-  ): string {
-    try {
-      const sdk = this.sdk;
-      if (!sdk) {
-        throw new Error('SDK not initialized');
-      }
-
-      const fullId = `myapp.${collectionName}:${recordId}`;
-      return sdk.collection(collectionName).getFileURL(fullId, fieldName);
-    } catch (error) {
-      console.error('Failed to get file URL:', error);
-      throw error;
-    }
+  ): Promise<string> {
+    const blob = await this.getFile(collectionName, recordId, fieldName);
+    return URL.createObjectURL(blob);
   }
 
   /**
-   * Delete file
+   * Delete file by setting the field to null via update()
    */
   async deleteFile(
     collectionName: string,
@@ -698,7 +694,7 @@ class FileUploadService {
       const sdk = await this.getSDK();
       const fullId = `myapp.${collectionName}:${recordId}`;
       
-      await sdk.collection(collectionName).deleteFile(fullId, fieldName);
+      await sdk.collection(collectionName).update(fullId, { [fieldName]: null });
     } catch (error) {
       console.error('Failed to delete file:', error);
       throw error;
@@ -757,11 +753,11 @@ if (file) {
     }
   );
 
-  console.log('Uploaded:', metadata.url);
+  console.log('Uploaded:', metadata.filename);
 }
 
-// Get file URL
-const url = fileUploadService.getFileURL('products', 'prod-123', 'image');
+// Get file as object URL for display
+const url = await fileUploadService.getFileURL('products', 'prod-123', 'image');
 ```
 
 ---
@@ -817,11 +813,9 @@ export class ImageGallery {
       if (Array.isArray(imageField)) {
         this.images = imageField.map((img: any, index: number) => ({
           id: `${this.recordId}-${index}`,
-          url: sdk.collection(this.collectionName).getFileURL(
-            fullId,
-            `${this.fieldName}[${index}]`
-          ),
-          filename: img.filename || `image-${index}`,
+          // Store filename for retrieval via getFile(); use fileUploadService.getFileURL() to get a display URL
+          url: '',
+          filename: typeof img === 'string' ? img : (img.filename || `image-${index}`),
           size: img.size || 0,
           uploadedAt: new Date(img.uploadedAt || Date.now())
         }));
