@@ -26,7 +26,10 @@ Use this skill when:
 
 ### JSON Structure Requirements
 
-Collections are defined as a JSON **array** of collection objects. Each collection must include:
+**Single collection** → output a plain JSON **object**.
+**Multiple collections** → output a JSON **array** of collection objects.
+
+Each collection object must include:
 - `name` (required): Unique collection name
 - `description` (optional): Purpose description
 - `fields` (required): Array of field definitions
@@ -417,6 +420,7 @@ Use MACHHUB Collection JSON format with:
 
 **Checklist:**
 - ✅ JSON syntax is valid
+- ✅ Single collection output is a plain JSON object; multiple collections use a JSON array
 - ✅ Standard fields included (id, created_dt, updated_dt)
 - ✅ All foreign keys use `relation` type (not `string` or `record`)
 - ✅ `relatedCollectionID` has correct structure
@@ -427,157 +431,170 @@ Use MACHHUB Collection JSON format with:
 
 ## Complete Example
 
-### Simple Parent Collection
+### Simple Parent Collection (single → object)
+
+```json
+{
+  "name": "customers",
+  "description": "Customer master data",
+  "fields": [
+    {
+      "name": "id",
+      "type": "record",
+      "required": true,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "companyName",
+      "type": "string",
+      "required": true,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "required": true,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "phone",
+      "type": "string",
+      "required": false,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "required": false,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "created_dt",
+      "type": "date",
+      "required": false,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "updated_dt",
+      "type": "date",
+      "required": false,
+      "onDelete": "ignore"
+    }
+  ],
+  "indexDetails": [
+    {
+      "fields": ["email"],
+      "isUnique": true,
+      "query": ""
+    },
+    {
+      "fields": ["status"],
+      "isUnique": false,
+      "query": ""
+    }
+  ]
+}
+```
+
+### Complex Child Collection with Relations (single → object)
+
+```json
+{
+  "name": "orders",
+  "description": "Customer orders",
+  "fields": [
+    {
+      "name": "id",
+      "type": "record",
+      "required": true,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "orderNumber",
+      "type": "string",
+      "required": true,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "customerId",
+      "type": "relation",
+      "relatedCollectionID": {
+        "Table": "collections",
+        "ID": "customers_collection_id"
+      },
+      "relationLinkType": "single",
+      "required": true,
+      "onDelete": "cascade"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "required": true,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "totalAmount",
+      "type": "number",
+      "required": false,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "orderDate",
+      "type": "date",
+      "required": true,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "created_dt",
+      "type": "date",
+      "required": false,
+      "onDelete": "ignore"
+    },
+    {
+      "name": "updated_dt",
+      "type": "date",
+      "required": false,
+      "onDelete": "ignore"
+    }
+  ],
+  "indexDetails": [
+    {
+      "fields": ["orderNumber"],
+      "isUnique": true,
+      "query": ""
+    },
+    {
+      "fields": ["customerId"],
+      "isUnique": false,
+      "query": ""
+    },
+    {
+      "fields": ["status"],
+      "isUnique": false,
+      "query": ""
+    },
+    {
+      "fields": ["orderDate"],
+      "isUnique": false,
+      "query": ""
+    }
+  ]
+}
+```
+
+### Multiple Collections (array)
+
+When generating more than one collection at once, wrap them in an array:
 
 ```json
 [
   {
     "name": "customers",
-    "description": "Customer master data",
-    "fields": [
-      {
-        "name": "id",
-        "type": "record",
-        "required": true,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "companyName",
-        "type": "string",
-        "required": true,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "email",
-        "type": "string",
-        "required": true,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "phone",
-        "type": "string",
-        "required": false,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "status",
-        "type": "string",
-        "required": false,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "created_dt",
-        "type": "date",
-        "required": false,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "updated_dt",
-        "type": "date",
-        "required": false,
-        "onDelete": "ignore"
-      }
-    ],
-    "indexDetails": [
-      {
-        "fields": ["email"],
-        "isUnique": true,
-        "query": ""
-      },
-      {
-        "fields": ["status"],
-        "isUnique": false,
-        "query": ""
-      }
-    ]
-  }
-]
-```
-
-### Complex Child Collection with Relations
-
-```json
-[
+    "fields": [ ... ]
+  },
   {
     "name": "orders",
-    "description": "Customer orders",
-    "fields": [
-      {
-        "name": "id",
-        "type": "record",
-        "required": true,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "orderNumber",
-        "type": "string",
-        "required": true,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "customerId",
-        "type": "relation",
-        "relatedCollectionID": {
-          "Table": "collections",
-          "ID": "customers_collection_id"
-        },
-        "relationLinkType": "single",
-        "required": true,
-        "onDelete": "cascade"
-      },
-      {
-        "name": "status",
-        "type": "string",
-        "required": true,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "totalAmount",
-        "type": "number",
-        "required": false,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "orderDate",
-        "type": "date",
-        "required": true,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "created_dt",
-        "type": "date",
-        "required": false,
-        "onDelete": "ignore"
-      },
-      {
-        "name": "updated_dt",
-        "type": "date",
-        "required": false,
-        "onDelete": "ignore"
-      }
-    ],
-    "indexDetails": [
-      {
-        "fields": ["orderNumber"],
-        "isUnique": true,
-        "query": ""
-      },
-      {
-        "fields": ["customerId"],
-        "isUnique": false,
-        "query": ""
-      },
-      {
-        "fields": ["status"],
-        "isUnique": false,
-        "query": ""
-      },
-      {
-        "fields": ["orderDate"],
-        "isUnique": false,
-        "query": ""
-      }
-    ]
+    "fields": [ ... ]
   }
 ]
 ```
@@ -641,7 +658,7 @@ Use MACHHUB Collection JSON format with:
 
 **Method 1: Paste JSON Directly**
 1. Navigate to **Database → Collections → Import**
-2. Paste your JSON array into the Monaco editor
+2. Paste your JSON object (single collection) or JSON array (multiple collections) into the Monaco editor
 3. Click **Import Collections**
 
 **Method 2: Upload JSON File**
@@ -676,7 +693,8 @@ Exported JSON can be:
 
 **Invalid JSON format**
 - Validate JSON syntax using a JSON validator
-- Ensure proper array structure with square brackets
+- Single collection: ensure it is a plain JSON object (`{ ... }`)
+- Multiple collections: ensure it is a JSON array (`[ ... ]`)
 - Check for missing commas or quotes
 
 **Missing required fields**
