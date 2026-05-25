@@ -6,9 +6,9 @@ Templates for working with MACHHUB collections, queries, relationships, and batc
 
 ### 1. `user.service.ts`
 **Complete CRUD service with validation**
-- Full user management
-- Email validation
-- Role-based filtering
+- Complete entity management pattern
+- Input validation pattern
+- Attribute-based filtering
 - Search functionality
 - Data transformation
 
@@ -46,16 +46,17 @@ import { getOrInitializeSDK } from './services/sdk.service';
 
 const sdk = await getOrInitializeSDK();
 
-const query = QueryBuilder.build(sdk, 'products', {
+const query = QueryBuilder.build(sdk, 'items', {
   filters: [
-    { field: 'price', operator: 'gte', value: 100 },
-    { field: 'isActive', operator: 'eq', value: true }
+    { field: 'amount', operator: 'gte', value: 100 },
+    { field: 'state', operator: 'eq', value: 'active' },
+    { field: 'name', operator: 'contains', value: 'sensor', or: true }
   ],
-  sort: { field: 'price', direction: 'asc' },
+  sort: { field: 'amount', direction: 'asc' },
   pagination: { page: 1, limit: 20 }
 });
 
-const products = await query.getAll();
+const items = await query.getAll();
 ```
 
 ### Relationship Handler Example
@@ -64,13 +65,13 @@ const products = await query.getAll();
 import { RelationshipHandler } from './utils/relationship-handler';
 
 // Create reference
-const categoryRef = RelationshipHandler.createAppReference('categories', 'electronics');
+const relatedRef = RelationshipHandler.createAppReference('relatedCollection', 'REL-001');
 
 // Extract ID
-const id = RelationshipHandler.extractId('myapp.products:laptop-001');
+const id = RelationshipHandler.extractId('myapp.items:ITEM-001');
 
 // Transform object
-const plain = RelationshipHandler.transformToPlainIds(product, ['categoryId']);
+const plain = RelationshipHandler.transformToPlainIds(item, ['relatedId']);
 ```
 
 ## See Also

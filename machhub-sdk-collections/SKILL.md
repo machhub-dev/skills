@@ -40,7 +40,7 @@ MACHHUB collections support these field types:
 | `number`   | Integers or decimals            | quantity, price, age, rating   |
 | `boolean`  | True/false flags                | isActive, isVerified, enabled  |
 | `date`     | Date and time values            | createdAt, dueDate, timestamp  |
-| `json`     | JSON objects/arrays             | metadata, config, customFields |
+| `json`     | JSON objects/arrays (e.g. order lines, custom config) | orderLines, metadata, config — **see `filterInArray` for querying inside these** |
 | `record`   | Record ID (for `id` field only) | id                             |
 | `relation` | Reference to other collections  | categoryId, userId, orderId    |
 
@@ -252,39 +252,46 @@ await sdk.collection('products').update(
 
 ```typescript
 const sdk = await getOrInitializeSDK();
-const collection = sdk.collection('products');
+const collection = sdk.collection('records');
 
 // Get all records
 const allProducts = await collection.getAll();
 
 // Get with filter
-const activeProducts = await collection
-  .filter('status', '=', 'active')
+const activeRecords = await collection
+  .filter('state', '=', 'active')
   .getAll();
 
 // Get with multiple filters
-const filteredProducts = await collection
-  .filter('status', '=', 'active')
-  .filter('price', '>', 100)
-  .filter('quantity', '>=', 10)
+const filteredRecords = await collection
+  .filter('state', '=', 'active')
+  .filter('amount', '>', 100)
+  .filter('score', '>=', 10)
+  .getAll();
+
+// Get with OR filters
+const openOrPending = await collection
+  .orFilter('state', '=', 'open')
+  .orFilter('state', '=', 'pending')
   .getAll();
 
 // Get with sorting
-const sortedProducts = await collection
-  .sort('price', 'desc')
+const sortedRecords = await collection
+  .sort('amount', 'desc')
   .getAll();
 
 // Get with pagination
-const paginatedProducts = await collection
+const paginatedRecords = await collection
   .offset(0)
   .limit(10)
   .getAll();
 
 // Complete query chain
 const results = await collection
-  .filter('category', '=', 'electronics')
-  .filter('status', '=', 'active')
-  .sort('price', 'asc')
+  .filter('type', '=', 'standard')
+  .orFilter('state', '=', 'active')
+  .orFilter('state', '=', 'pending')
+  .sort('amount', 'asc')
   .offset(20)
   .limit(10)
   .getAll();
@@ -294,36 +301,169 @@ const results = await collection
 
 | Operator   | Description           | Example                                          |
 | ---------- | --------------------- | ------------------------------------------------ |
-| `=`        | Equal to              | `.filter('status', '=', 'active')`               |
-| `!=`       | Not equal to          | `.filter('status', '!=', 'archived')`            |
-| `>`        | Greater than          | `.filter('price', '>', 100)`                     |
-| `<`        | Less than             | `.filter('quantity', '<', 10)`                   |
-| `>=`       | Greater than or equal | `.filter('price', '>=', 50)`                     |
-| `<=`       | Less than or equal    | `.filter('quantity', '<=', 100)`                 |
-| `CONTAINS` | String contains       | `.filter('name', 'CONTAINS', 'laptop')`          |
-| `IN`       | Value in array        | `.filter('status', 'IN', ['active', 'pending'])` |
+| `=`        | Equal to              | `.filter('state', '=', 'active')`                |
+| `!=`       | Not equal to          | `.filter('state', '!=', 'archived')`             |
+| `>`        | Greater than          | `.filter('amount', '>', 100)`                    |
+| `<`        | Less than             | `.filter('score', '<', 10)`                      |
+| `>=`       | Greater than or equal | `.filter('amount', '>=', 50)`                    |
+| `<=`       | Less than or equal    | `.filter('score', '<=', 100)`                    |
+| `CONTAINS` | String contains       | `.filter('title', 'CONTAINS', 'sample')`         |
+| `IN`       | Value in array        | `.filter('state', 'IN', ['active', 'pending'])`  |
+
+> **`filter()` only works on top-level fields.** For `json` fields that store arrays of objects (e.g. `orderLines`), use `filterInArray()` — see section below.
 
 ### Advanced Query Methods
 
 ```typescript
 // Get first matching record
 const firstActive = await collection
-  .filter('status', '=', 'active')
+  .filter('state', '=', 'active')
   .first();
 
 // Get record count
 const activeCount = await collection
-  .filter('status', '=', 'active')
+  .filter('state', '=', 'active')
   .count();
 
 // Get single record by ID
-const product = await collection.getOne('myapp.products:PROD-001');
+const record = await collection.getOne('myapp.records:REC-001');
 
 // Get with RecordID object
 import { RecordIDToString } from '@machhub-dev/sdk-ts';
-const productId = RecordIDToString({ Table: "myapp.products", ID: "PROD-001" });
-const product = await collection.getOne(productId);
+const recordId = RecordIDToString({ Table: "myapp.records", ID: "REC-001" });
+const record = await collection.getOne(recordId);
 ```
+
+---
+
+## Filtering Inside JSON Array Fields (`filterInArray`)
+
+### Why This Exists
+
+Some collections store lines/rows as a **`json` field** — an array of objects embedded directly in the record rather than as a separate related collection. Common examples:
+
+- `purchaseOrders.orderLines` → `[{ itemId, qty, unitPrice }, ...]`
+- `salesOrders.orderLines` → `[{ itemId, qty, unitPrice }, ...]`
+- `workOrders.orderLines` → `[{ itemId, qtyRequired }, ...]`
+
+Because these are `json` (not `relation`) fields, **`filter()` cannot reach inside them**. The old workaround was to load all records and iterate in TypeScript — inefficient.
+
+`filterInArray()` pushes the filter into SurrealDB, so only matching parent records are returned.
+
+### Signature
+
+```typescript
+.filterInArray(arrayField: string, subField: string, operator: BasicOperator, value: any)
+```
+
+`BasicOperator` supports: `=` `!=` `<` `<=` `>` `>=` `CONTAINS` `IN`
+
+### Before vs After
+
+```typescript
+// ❌ BEFORE — load everything, filter in TypeScript (inefficient)
+const allPOs = await sdk.collection('purchaseOrders').getAll();
+const matchingPOs = allPOs.filter(po =>
+  po.orderLines?.some((line: any) => line.itemId === 'myapp.items:ITEM-001')
+);
+
+// ✅ AFTER — filter pushed to SurrealDB, only matching records returned
+const matchingPOs = await sdk.collection('purchaseOrders')
+  .filterInArray('orderLines', 'itemId', '=', 'myapp.items:ITEM-001')
+  .getAll();
+```
+
+### Common Use Cases
+
+```typescript
+const sdk = await getOrInitializeSDK();
+
+// Find all POs that contain a specific item
+const pos = await sdk.collection('purchaseOrders')
+  .filterInArray('orderLines', 'itemId', '=', 'myapp.items:ITEM-001')
+  .filter('status', '!=', 'cancelled')
+  .getAll();
+
+// Find all SOs with open lines for an item (onOrder calculation)
+const sos = await sdk.collection('salesOrders')
+  .filterInArray('orderLines', 'itemId', '=', 'myapp.items:ITEM-001')
+  .filter('status', '=', 'open')
+  .getAll();
+
+// Find all WOs consuming an item (committed stock calculation)
+const wos = await sdk.collection('workOrders')
+  .filterInArray('orderLines', 'itemId', '=', 'myapp.items:ITEM-001')
+  .filter('status', 'IN', ['planned', 'in-progress'])
+  .getAll();
+
+// Find all orders where any line has qty above a threshold
+const bulkOrders = await sdk.collection('purchaseOrders')
+  .filterInArray('orderLines', 'qty', '>', 100)
+  .getAll();
+
+// Chain multiple array sub-field filters
+const specificOrders = await sdk.collection('purchaseOrders')
+  .filterInArray('orderLines', 'itemId', '=', 'myapp.items:ITEM-001')
+  .filterInArray('orderLines', 'unitPrice', '<', 50)
+  .getAll();
+```
+
+### What SurrealDB Receives
+
+```sql
+-- .filterInArray('orderLines', 'itemId', '=', 'myapp.items:ITEM-001')
+SELECT * FROM `myapp.purchaseOrders`
+WHERE `orderLines`[WHERE `itemId` = 'myapp.items:ITEM-001']
+```
+
+SurrealDB's `[WHERE ...]` inline array filter returns a sub-array. A non-empty result is truthy — so the parent record is included.
+
+### Pattern: Compute onOrder / Committed Stock
+
+```typescript
+// inventory.service.ts
+async getOnOrderQty(itemId: string): Promise<number> {
+  const sdk = await getOrInitializeSDK();
+
+  // Load only POs/SOs that contain this item
+  const orders = await sdk.collection('purchaseOrders')
+    .filterInArray('orderLines', 'itemId', '=', itemId)
+    .filter('status', 'IN', ['open', 'partial'])
+    .getAll();
+
+  // Sum qty from matching lines only
+  let total = 0;
+  for (const order of orders) {
+    for (const line of (order.orderLines ?? [])) {
+      if (line.itemId === itemId) {
+        total += line.qty ?? 0;
+      }
+    }
+  }
+  return total;
+}
+
+async getCommittedQty(itemId: string): Promise<number> {
+  const sdk = await getOrInitializeSDK();
+
+  const wos = await sdk.collection('workOrders')
+    .filterInArray('orderLines', 'itemId', '=', itemId)
+    .filter('status', 'IN', ['planned', 'in-progress'])
+    .getAll();
+
+  let total = 0;
+  for (const wo of wos) {
+    for (const line of (wo.orderLines ?? [])) {
+      if (line.itemId === itemId) {
+        total += line.qtyRequired ?? 0;
+      }
+    }
+  }
+  return total;
+}
+```
+
+> **Note:** `filterInArray()` returns the correct **parent records** efficiently. You still iterate over `orderLines` in TypeScript to sum quantities — but you are only iterating records that actually contain the item, not every record in the collection.
 
 ---
 
@@ -811,16 +951,16 @@ class UserService {
       let query = sdk.collection(this.collectionName);
 
       if (filters?.role) {
-        query = query.filter('role', 'eq', filters.role);
+        query = query.filter('role', '=', filters.role);
       }
 
       if (filters?.isActive !== undefined) {
-        query = query.filter('isActive', 'eq', filters.isActive);
+        query = query.filter('isActive', '=', filters.isActive);
       }
 
       if (filters?.page && filters?.limit) {
-        const skip = (filters.page - 1) * filters.limit;
-        query = query.skip(skip).limit(filters.limit);
+        const offset = (filters.page - 1) * filters.limit;
+        query = query.offset(offset).limit(filters.limit);
       }
 
       const users = await query.getAll();
@@ -854,7 +994,7 @@ class UserService {
       const sdk = await this.getSDK();
       const users = await sdk
         .collection(this.collectionName)
-        .filter('email', 'eq', email)
+        .filter('email', '=', email)
         .getAll();
 
       return users.length > 0 ? this.transformUser(users[0]) : null;
@@ -948,11 +1088,9 @@ class UserService {
       const sdk = await this.getSDK();
       const users = await sdk
         .collection(this.collectionName)
-        .filter('firstName', 'contains', query)
-        .or()
-        .filter('lastName', 'contains', query)
-        .or()
-        .filter('username', 'contains', query)
+        .filter('firstName', 'CONTAINS', query)
+        .orFilter('lastName', 'CONTAINS', query)
+        .orFilter('username', 'CONTAINS', query)
         .getAll();
 
       return users.map(this.transformUser);
@@ -1053,9 +1191,10 @@ export class QueryBuilder {
     if (options?.filters) {
       for (const filter of options.filters) {
         if (filter.or) {
-          query = query.or();
+          query = query.orFilter(filter.field, QueryBuilder.toSDKOperator(filter.operator), filter.value);
+        } else {
+          query = query.filter(filter.field, QueryBuilder.toSDKOperator(filter.operator), filter.value);
         }
-        query = query.filter(filter.field, filter.operator, filter.value);
       }
     }
 
@@ -1067,13 +1206,8 @@ export class QueryBuilder {
     // Apply pagination
     if (options?.pagination) {
       const { page, limit } = options.pagination;
-      const skip = (page - 1) * limit;
-      query = query.skip(skip).limit(limit);
-    }
-
-    // Apply field selection
-    if (options?.fields) {
-      query = query.fields(options.fields);
+      const offset = (page - 1) * limit;
+      query = query.offset(offset).limit(limit);
     }
 
     // Apply expand
@@ -1082,6 +1216,21 @@ export class QueryBuilder {
     }
 
     return query;
+  }
+
+  private static toSDKOperator(operator: FilterOperator): string {
+    switch (operator) {
+      case 'eq': return '=';
+      case 'ne': return '!=';
+      case 'gt': return '>';
+      case 'lt': return '<';
+      case 'gte': return '>=';
+      case 'lte': return '<=';
+      case 'in': return 'IN';
+      case 'nin': return 'NOT IN';
+      case 'contains': return 'CONTAINS';
+      default: return '=';
+    }
   }
 
   /**
@@ -1128,18 +1277,19 @@ import { getOrInitializeSDK } from './services/sdk.service';
 const sdk = await getOrInitializeSDK();
 
 // Complex query with multiple filters
-const query = QueryBuilder.build(sdk, 'products', {
+const query = QueryBuilder.build(sdk, 'items', {
   filters: [
-    { field: 'price', operator: 'gte', value: 100 },
-    { field: 'price', operator: 'lte', value: 500 },
-    { field: 'isActive', operator: 'eq', value: true }
+    { field: 'amount', operator: 'gte', value: 100 },
+    { field: 'amount', operator: 'lte', value: 500 },
+    { field: 'state', operator: 'eq', value: 'active' },
+    { field: 'title', operator: 'contains', value: 'sample', or: true }
   ],
-  sort: { field: 'price', direction: 'asc' },
+  sort: { field: 'amount', direction: 'asc' },
   pagination: { page: 1, limit: 20 },
-  expand: ['categoryId']
+  expand: ['relatedId']
 });
 
-const products = await query.getAll();
+const items = await query.getAll();
 
 // Date range query
 const filters = QueryBuilder.dateRange('createdAt', 
@@ -1149,8 +1299,8 @@ const filters = QueryBuilder.dateRange('createdAt',
 
 // Search across multiple fields
 const searchFilters = QueryBuilder.search(
-  ['name', 'description', 'sku'],
-  'laptop'
+  ['title', 'description', 'code'],
+  'sensor'
 );
 ```
 

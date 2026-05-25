@@ -40,16 +40,16 @@ class UserService {
             let query = sdk.collection(this.collectionName);
 
             if (filters?.role) {
-                query = query.filter('role', 'eq', filters.role);
+                query = query.filter('role', '=', filters.role);
             }
 
             if (filters?.isActive !== undefined) {
-                query = query.filter('isActive', 'eq', filters.isActive);
+                query = query.filter('isActive', '=', filters.isActive);
             }
 
             if (filters?.page && filters?.limit) {
-                const skip = (filters.page - 1) * filters.limit;
-                query = query.skip(skip).limit(filters.limit);
+                const offset = (filters.page - 1) * filters.limit;
+                query = query.offset(offset).limit(filters.limit);
             }
 
             const users = await query.getAll();
@@ -83,7 +83,7 @@ class UserService {
             const sdk = await this.getSDK();
             const users = await sdk
                 .collection(this.collectionName)
-                .filter('email', 'eq', email)
+                .filter('email', '=', email)
                 .getAll();
 
             return users.length > 0 ? this.transformUser(users[0]) : null;
@@ -177,11 +177,9 @@ class UserService {
             const sdk = await this.getSDK();
             const users = await sdk
                 .collection(this.collectionName)
-                .filter('firstName', 'contains', query)
-                .or()
-                .filter('lastName', 'contains', query)
-                .or()
-                .filter('username', 'contains', query)
+                .filter('firstName', 'CONTAINS', query)
+                .orFilter('lastName', 'CONTAINS', query)
+                .orFilter('username', 'CONTAINS', query)
                 .getAll();
 
             return users.map(this.transformUser);

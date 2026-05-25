@@ -35,9 +35,10 @@ export class QueryBuilder {
         if (options?.filters) {
             for (const filter of options.filters) {
                 if (filter.or) {
-                    query = query.or();
+                    query = query.orFilter(filter.field, QueryBuilder.toSDKOperator(filter.operator), filter.value);
+                } else {
+                    query = query.filter(filter.field, QueryBuilder.toSDKOperator(filter.operator), filter.value);
                 }
-                query = query.filter(filter.field, filter.operator, filter.value);
             }
         }
 
@@ -49,13 +50,8 @@ export class QueryBuilder {
         // Apply pagination
         if (options?.pagination) {
             const { page, limit } = options.pagination;
-            const skip = (page - 1) * limit;
-            query = query.skip(skip).limit(limit);
-        }
-
-        // Apply field selection
-        if (options?.fields) {
-            query = query.fields(options.fields);
+            const offset = (page - 1) * limit;
+            query = query.offset(offset).limit(limit);
         }
 
         // Apply expand
@@ -64,6 +60,21 @@ export class QueryBuilder {
         }
 
         return query;
+    }
+
+    private static toSDKOperator(operator: FilterOperator): string {
+        switch (operator) {
+            case 'eq': return '=';
+            case 'ne': return '!=';
+            case 'gt': return '>';
+            case 'lt': return '<';
+            case 'gte': return '>=';
+            case 'lte': return '<=';
+            case 'in': return 'IN';
+            case 'nin': return 'NOT IN';
+            case 'contains': return 'CONTAINS';
+            default: return '=';
+        }
     }
 
     /**
