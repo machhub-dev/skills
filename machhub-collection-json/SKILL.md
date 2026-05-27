@@ -65,17 +65,40 @@ These fields are automatically managed by MACHHUB backend.
 
 ### Basic Types
 
-| Type      | Use Case                        | Example Fields                        |
-| --------- | ------------------------------- | ------------------------------------- |
-| `string`  | Plain text, codes, statuses     | name, description, status, sku        |
-| `url`     | URL strings (validated)         | website, documentUrl                  |
-| `file`    | File paths/references           | attachmentPath, logoFile              |
-| `editor`  | Rich text content               | htmlContent, emailBody                |
-| `number`  | Integers or decimals            | quantity, price, age                  |
-| `boolean` | True/false flags                | isActive, isVerified                  |
-| `date`    | Date and time values            | dueDate, startDate, timestamp         |
-| `json`    | JSON objects or arrays          | metadata, configuration, customFields |
-| `record`  | Record ID (for `id` field only) | id                                    |
+| Type      | Use Case                                    | Example Fields                        |
+| --------- | ------------------------------------------- | ------------------------------------- |
+| `string`  | Plain text, codes, statuses                 | name, description, status, sku        |
+| `enum`    | Predefined set of allowed string values     | priority, category, orderStatus       |
+| `url`     | URL strings (validated)                     | website, documentUrl                  |
+| `file`    | File paths/references                       | attachmentPath, logoFile              |
+| `editor`  | Rich text content                           | htmlContent, emailBody                |
+| `number`  | Integers or decimals                        | quantity, price, age                  |
+| `boolean` | True/false flags                            | isActive, isVerified                  |
+| `date`    | Date and time values                        | dueDate, startDate, timestamp         |
+| `json`    | JSON objects or arrays                      | metadata, configuration, customFields |
+| `record`  | Record ID (for `id` field only)             | id                                    |
+
+### Enum Type (Predefined Values)
+
+Use `enum` when a field must be restricted to a fixed set of string values (e.g., statuses, priorities, categories). The allowed values are defined in `enumOptions`.
+
+```json
+{
+  "name": "priority",
+  "type": "enum",
+  "enumOptions": ["low", "medium", "high", "critical"],
+  "required": true,
+  "onDelete": "ignore"
+}
+```
+
+**Enum Properties:**
+- `enumOptions`: Array of strings listing every allowed value. **Required** when type is `enum`.
+- `required` / `onDelete`: Same rules as other basic types.
+
+**When to use `enum` vs `string`:**
+- `enum`: The set of valid values is known, fixed, and enforced at the schema level (e.g., `["draft", "active", "archived"]`).
+- `string`: Free-form text with no restriction on content.
 
 ### Relation Type (Foreign Keys)
 
@@ -422,6 +445,7 @@ Use MACHHUB Collection JSON format with:
 - ✅ JSON syntax is valid
 - ✅ Single collection output is a plain JSON object; multiple collections use a JSON array
 - ✅ Standard fields included (id, created_dt, updated_dt)
+- ✅ Enum fields include a non-empty `enumOptions` array
 - ✅ All foreign keys use `relation` type (not `string` or `record`)
 - ✅ `relatedCollectionID` has correct structure
 - ✅ `relationLinkType` is "single" or "multiple"
@@ -640,6 +664,21 @@ When generating more than one collection at once, wrap them in an array:
 // CORRECT
 {"name": "userId", "type": "relation", "relatedCollectionID": {...}}
 ```
+
+❌ **Using `string` for fields with a fixed set of values**
+```json
+// WRONG — no enforcement of allowed values
+{"name": "priority", "type": "string"}
+```
+
+✅ **Use `enum` with `enumOptions` instead**
+```json
+// CORRECT
+{"name": "priority", "type": "enum", "enumOptions": ["low", "medium", "high"]}
+```
+
+❌ **Omitting `enumOptions` on an enum field**
+- Every `enum` field must include a non-empty `enumOptions` array
 
 ❌ **Missing standard fields**
 - Always include `id`, `created_dt`, `updated_dt`
