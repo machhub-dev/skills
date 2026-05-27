@@ -31,18 +31,28 @@ This skill covers **collection operations** in the MACHHUB SDK - the primary way
 
 MACHHUB collections support these field types:
 
-| Type       | Use Case                        | Example Fields                 |
-| ---------- | ------------------------------- | ------------------------------ |
-| `string`   | Plain text, codes, statuses     | name, description, sku, status |
-| `url`      | URL strings (validated)         | website, documentUrl           |
-| `file`     | File references                 | image, attachment, logo        |
-| `editor`   | Rich text/HTML                  | description, content, notes    |
-| `number`   | Integers or decimals            | quantity, price, age, rating   |
-| `boolean`  | True/false flags                | isActive, isVerified, enabled  |
-| `date`     | Date and time values            | createdAt, dueDate, timestamp  |
+| Type       | Use Case                                            | Example Fields                 |
+| ---------- | --------------------------------------------------- | ------------------------------ |
+| `string`   | Plain text, codes, free-form statuses               | name, description, sku         |
+| `enum`     | Predefined set of allowed string values             | priority, category, orderStatus |
+| `url`      | URL strings (validated)                             | website, documentUrl           |
+| `file`     | File references                                     | image, attachment, logo        |
+| `editor`   | Rich text/HTML                                      | description, content, notes    |
+| `number`   | Integers or decimals                                | quantity, price, age, rating   |
+| `boolean`  | True/false flags                                    | isActive, isVerified, enabled  |
+| `date`     | Date and time values                                | createdAt, dueDate, timestamp  |
 | `json`     | JSON objects/arrays (e.g. order lines, custom config) | orderLines, metadata, config — **see `filterInArray` for querying inside these** |
-| `record`   | Record ID (for `id` field only) | id                             |
-| `relation` | Reference to other collections  | categoryId, userId, orderId    |
+| `record`   | Record ID (for `id` field only)                     | id                             |
+| `relation` | Reference to other collections                      | categoryId, userId, orderId    |
+
+> **Enum fields** — pass a plain string that matches one of the `enumOptions` defined in the collection schema. No special conversion is needed (unlike `relation` fields). TypeScript union types are a natural match:
+> ```typescript
+> // Schema defines enumOptions: ["low", "medium", "high", "critical"]
+> await sdk.collection('tasks').create({
+>   title: 'Fix bug',
+>   priority: 'high'  // must be one of the enumOptions
+> });
+> ```
 
 ---
 
