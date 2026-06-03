@@ -119,9 +119,38 @@ Use `enum` when a field must be restricted to a fixed set of string values (e.g.
 ```
 
 **Relation Properties:**
-- `relatedCollectionID`: Object with `Table` (always "collections") and `ID` (target collection ID)
+- `relatedCollectionID`: Object with `Table` (always `"collections"`), `ID` (target collection's record ID), and optionally `name` (collection name — used as fallback during import; see below)
 - `relationLinkType`: `"single"` (one-to-one/many-to-one) or `"multiple"` (one-to-many)
 - `onDelete`: Deletion behavior (see below)
+
+#### `relatedCollectionID.name` — Cross-Device Import Fallback
+
+Collection IDs are device-specific (different across environments). To make exported schemas portable, the `relatedCollectionID` object can carry an optional `name` field containing the **collection name**.
+
+**On export:** MACHHUB automatically adds `name` to every relation field in the exported JSON.
+
+**On import:** MACHHUB resolves relations in two passes:
+1. **Pass 1** — creates all collections, temporarily omitting relation fields that point to user collections (IDs would be wrong on the target device)
+2. **Pass 2** — re-fetches all collections, builds a `name → RecordID` map, then patches each relation field using `relatedCollectionID.name` to find the correct ID on the target device
+
+This means **you can use `name` as a fallback instead of `ID`** when you know the collection name but not its ID on the target device:
+
+```json
+{
+  "name": "customerId",
+  "type": "relation",
+  "relatedCollectionID": {
+    "Table": "collections",
+    "ID": "any_placeholder_or_actual_id",
+    "name": "customers"
+  },
+  "relationLinkType": "single",
+  "required": true,
+  "onDelete": "cascade"
+}
+```
+
+If `name` is present and matches an existing collection, the import replaces the `ID` with the correct one for the target device. If `name` cannot be resolved, a warning is shown and the field is left as-is.
 
 **Common Mistake:**
 ```json
@@ -447,7 +476,8 @@ Use MACHHUB Collection JSON format with:
 - ✅ Standard fields included (id, created_dt, updated_dt)
 - ✅ Enum fields include a non-empty `enumOptions` array
 - ✅ All foreign keys use `relation` type (not `string` or `record`)
-- ✅ `relatedCollectionID` has correct structure
+- ✅ `relatedCollectionID` has correct structure (`Table`, `ID`)
+- ✅ `relatedCollectionID.name` included for portability across devices (required for cross-environment import)
 - ✅ `relationLinkType` is "single" or "multiple"
 - ✅ `onDelete` behaviors match requirements
 - ✅ Unique indexes for identifiers
@@ -544,7 +574,8 @@ Use MACHHUB Collection JSON format with:
       "type": "relation",
       "relatedCollectionID": {
         "Table": "collections",
-        "ID": "customers_collection_id"
+        "ID": "customers_collection_id",
+        "name": "customers"
       },
       "relationLinkType": "single",
       "required": true,
@@ -707,6 +738,23 @@ When generating more than one collection at once, wrap them in an array:
 4. Review the loaded content
 5. Click **Import Collections**
 
+### Two-Pass Import Process
+
+The importer handles cross-device relation IDs automatically:
+
+**Pass 1 — Create collections:**
+- All collections are created (or updated if they already exist by name)
+- Relation fields pointing to other user collections are **temporarily stripped** — their IDs are device-specific and would be wrong on the target device
+- The importer first tries to preserve the original collection ID; if that ID is already taken it falls back to an auto-generated ID (a warning is shown)
+
+**Pass 2 — Resolve relations:**
+- All collections are re-fetched to get their actual IDs on the target device
+- A `name → RecordID` map is built from the current device's collections
+- Each stripped relation field is patched: `relatedCollectionID.name` is used to look up the correct `RecordID`
+- If a referenced collection name is not found, a warning is shown listing the unresolved references
+
+**Implication:** When writing schemas by hand for import, include a `name` key inside `relatedCollectionID` to ensure relations survive cross-device migration even if the original ID doesn't exist.
+
 ### Export Existing Collections
 
 ```
@@ -718,6 +766,24 @@ Exported JSON can be:
 - Shared with team
 - Used as backups
 - Migrated between environments
+
+**Note on exported relation fields:** The export page automatically enriches every relation's `relatedCollectionID` with a `name` field (the referenced collection's name). This makes the schema portable across devices — during import, if the original ID doesn't exist on the target device, the importer resolves the relation using the `name` instead.
+
+Exported relation field example:
+```json
+{
+  "name": "customerId",
+  "type": "relation",
+  "relatedCollectionID": {
+    "Table": "collections",
+    "ID": "original_device_specific_id",
+    "name": "customers"
+  },
+  "relationLinkType": "single",
+  "required": true,
+  "onDelete": "cascade"
+}
+```
 
 ## Troubleshooting
 
@@ -745,9 +811,10 @@ Exported JSON can be:
 - Use unique names or delete existing collection first
 
 **Relation Errors**
-- Invalid collection ID: Verify the `relatedCollectionID.ID` exists
+- Invalid collection ID: Verify the `relatedCollectionID.ID` exists, or add a `name` field to let the importer resolve it by collection name
 - Wrong relation type: Check if `relationLinkType` is correctly set to "single" or "multiple"
-- Table property: Ensure `relatedCollectionID.Table` is always "collections"
+- Table property: Ensure `relatedCollectionID.Table` is always `"collections"`
+- Unresolved relation after import: The `name` field in `relatedCollectionID` must exactly match the collection name on the target device (case-sensitive)
 
 **Index Conflicts**
 - Unique constraint violation: If `isUnique: true`, ensure no duplicate values exist in data
@@ -756,12 +823,13 @@ Exported JSON can be:
 
 ## Important Notes
 
-- **Collection IDs**: When importing, `id` and `domain_id` fields are automatically generated by the system and should not be included in the JSON
-- **Order matters**: For collections with relations, create parent collections before child collections to get their IDs
-- **Bulk import**: The import process creates all collections sequentially; check the console for any failures
+- **Collection IDs**: When importing, `id` and `domain_id` fields are automatically generated by the system; if you include an `id`, the importer tries to preserve it but falls back to auto-generated if it conflicts
+- **Order matters**: For collections with relations, parent collections must be imported first so Pass 2 can resolve their IDs by name
+- **Bulk import**: The import process is two-pass; relation fields are resolved after all collections are created
 - **Validation**: The system validates each collection before creation; invalid collections will be skipped with error messages
 - **Automatic fields**: The backend automatically manages `id`, `created_dt`, and `updated_dt` fields - you just need to define them
 - **Case sensitivity**: Field names and collection names are case-sensitive
+- **Cross-device portability**: Always include `relatedCollectionID.name` in relation fields when the schema will be imported on a different device or environment; without it, relations cannot be resolved and will be left broken
 
 ## Related Routes
 
