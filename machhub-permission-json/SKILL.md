@@ -92,3 +92,12 @@ Each item in the `features` array represents one permission group.
 - **Creates** any feature or scope that does not exist yet.
 - **Updates** an existing feature if the `name` matches.
 - **Never deletes** anything — it is safe to run multiple times.
+
+---
+
+## Next step: assigning permissions to groups
+
+This page manages the *catalogue* of features and scopes. To assign those permissions to
+**groups** (and to import/export a group's permissions in bulk), use the **Groups page** —
+see [`GROUPS.md`](./GROUPS.md). Import features/scopes here **first**, then import group
+permissions there.
