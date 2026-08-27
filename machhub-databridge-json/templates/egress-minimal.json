@@ -1,0 +1,28 @@
+{
+  "name": "Plant A Historian",
+  "description": "Writes plant A temperature and pressure readings into the MES readings table",
+  "driver": "mysql",
+  "host": "10.20.0.15",
+  "port": 3306,
+  "database": "mes",
+  "username": "machhub",
+  "tlsMode": "false",
+  "bufferMaxAge": "72h",
+  "bufferMaxBytes": 2147483648,
+  "egressRoutes": [
+    {
+      "id": "9f1c1d2e-4a5b-4c6d-8e9f-0a1b2c3d4e5f",
+      "name": "Sensor readings",
+      "enabled": true,
+      "selector": "plantA/+/sensors/#",
+      "table": "tag_readings",
+      "writeMode": "insert",
+      "columns": [
+        { "column": "topic", "source": "topic", "type": "string" },
+        { "column": "reading_value", "source": "value", "type": "float" },
+        { "column": "read_at", "source": "timestamp", "type": "datetime" },
+        { "column": "site", "source": "literal", "expr": "PLANT_A", "type": "string" }
+      ]
+    }
+  ]
+}

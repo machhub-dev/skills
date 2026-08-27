@@ -1,0 +1,53 @@
+{
+  "name": "Plant A MES",
+  "description": "Machine state out to the MES; work orders back in from it",
+  "driver": "mysql",
+  "host": "mes-db.plant-a.internal",
+  "port": 3306,
+  "database": "mes",
+  "username": "machhub",
+  "tlsMode": "true",
+  "params": {
+    "charset": "utf8mb4"
+  },
+  "bufferMaxAge": "72h",
+  "bufferMaxBytes": 2147483648,
+
+  "egressRoutes": [
+    {
+      "id": "c4d0b9e1-8f23-4a71-9b6c-2e5d7a1f3b48",
+      "name": "Machine state to MES",
+      "enabled": true,
+      "selector": "plantA/+/machine/state",
+      "table": "machine_state_log",
+      "writeMode": "upsert",
+      "upsertKeys": ["machine_topic", "recorded_at"],
+      "columns": [
+        { "column": "machine_topic", "source": "topic", "type": "string" },
+        { "column": "recorded_at", "source": "timestamp", "type": "datetime" },
+        { "column": "state", "source": "jsonpath", "expr": "$.state", "type": "string" },
+        { "column": "rpm", "source": "jsonpath", "expr": "$.motor.rpm", "type": "int" },
+        { "column": "raw_payload", "source": "value", "type": "json" }
+      ]
+    }
+  ],
+
+  "ingressRoutes": [
+    {
+      "id": "7b2e6c14-30af-4d58-a9e0-6c1b84f27d93",
+      "name": "Work orders from MES",
+      "enabled": true,
+      "table": "work_orders",
+      "watermarkCol": "id",
+      "watermarkKind": "autoincrement",
+      "pollInterval": "15s",
+      "batchSize": 500,
+      "topicTemplate": "mes/workorders/{{.machine_id}}",
+      "payload": [
+        { "column": "orderNumber", "source": "jsonpath", "expr": "$.order_no", "type": "string" },
+        { "column": "quantity", "source": "jsonpath", "expr": "$.qty", "type": "int" },
+        { "column": "dueAt", "source": "jsonpath", "expr": "$.due_date", "type": "datetime" }
+      ]
+    }
+  ]
+}

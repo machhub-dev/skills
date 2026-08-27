@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "bridges": [
+    {
+      "name": "Plant A MES",
+      "driver": "mysql",
+      "host": "10.20.0.15",
+      "port": 3306,
+      "database": "mes",
+      "username": "machhub",
+      "tlsMode": "true",
+      "bufferMaxAge": "72h",
+      "egressRoutes": [
+        {
+          "id": "1a2b3c4d-0001-4000-8000-000000000001",
+          "name": "Production counts",
+          "enabled": true,
+          "selector": "plantA/+/counters/parts",
+          "table": "production_counts",
+          "writeMode": "insert",
+          "columns": [
+            { "column": "topic", "source": "topic", "type": "string" },
+            { "column": "count", "source": "value", "type": "int" },
+            { "column": "counted_at", "source": "timestamp", "type": "datetime" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Plant B Quality",
+      "description": "Pulls lab results in from the LIMS database",
+      "driver": "mysql",
+      "host": "10.30.0.9",
+      "port": 3306,
+      "database": "lims",
+      "username": "machhub_ro",
+      "tlsMode": "preferred",
+      "ingressRoutes": [
+        {
+          "id": "1a2b3c4d-0002-4000-8000-000000000002",
+          "name": "Lab results",
+          "enabled": true,
+          "query": "SELECT r.id, r.sample_id, r.line_code, r.result_value, r.updated_at FROM lab_results r WHERE r.updated_at > ? ORDER BY r.updated_at ASC",
+          "watermarkCol": "updated_at",
+          "watermarkKind": "timestamp",
+          "safetyLag": "10s",
+          "pollInterval": "30s",
+          "batchSize": 200,
+          "topicTemplate": "plantB/quality/{{.line_code}}/result",
+          "payload": [
+            { "column": "sampleId", "source": "jsonpath", "expr": "$.sample_id", "type": "string" },
+            { "column": "result", "source": "jsonpath", "expr": "$.result_value", "type": "float" },
+            { "column": "measuredAt", "source": "jsonpath", "expr": "$.updated_at", "type": "datetime" }
+          ]
+        }
+      ]
+    }
+  ]
+}

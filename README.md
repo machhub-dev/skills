@@ -221,11 +221,13 @@ Integration guides and templates for popular frameworks:
 
 ### Additional Skills
 
-| Skill Name                | Description                                                  |
-| ------------------------- | ------------------------------------------------------------ |
-| `machhub-collection-json` | Collection JSON schema generation with relations and indexes |
+| Skill Name                 | Description                                                            |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `machhub-collection-json`  | Collection JSON schema generation with relations and indexes           |
+| `machhub-databridge-json`  | Data Bridge JSON generation — MySQL routes, mappings, watermarks       |
+| `machhub-permission-json`  | Permission JSON generation — features, actions and scopes              |
 
-**Total: 12 skills with 57 production-ready templates**
+**Total: 16 skills with 70 production-ready templates**
 
 ---
 
@@ -325,6 +327,8 @@ skills/
 ├── README.md                      # This file
 ├── TEMPLATES_OVERVIEW.md          # Complete template catalog
 ├── machhub-collection-json/       # Collection JSON schema
+├── machhub-databridge-json/       # Data Bridge JSON schema (3 templates)
+├── machhub-permission-json/       # Permission JSON schema
 ├── machhub-sdk-initialization/    # SDK setup (4 templates)
 ├── machhub-sdk-architecture/      # Service patterns (4 templates)
 ├── machhub-sdk-collections/       # CRUD operations (4 templates)

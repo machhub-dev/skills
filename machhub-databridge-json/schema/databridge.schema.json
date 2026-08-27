@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://machhub.dev/schema/databridge.schema.json",
+  "title": "MACHHUB Data Bridge Import File",
+  "description": "A single bridge object, an array of bridge objects, or a versioned wrapper. All three are accepted by the Data Bridge import dialog.",
+  "anyOf": [
+    { "$ref": "#/$defs/bridge" },
+    { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/bridge" } },
+    { "$ref": "#/$defs/file" }
+  ],
+
+  "$defs": {
+    "file": {
+      "type": "object",
+      "required": ["bridges"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1,
+          "description": "Format version. Omit or set to 1."
+        },
+        "exportedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Informational only; ignored on import."
+        },
+        "bridges": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/bridge" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "bridge": {
+      "type": "object",
+      "required": ["name", "driver", "host", "port", "database"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the environment. Import matches on this to detect a collision."
+        },
+        "description": { "type": "string" },
+        "driver": {
+          "type": "string",
+          "enum": ["mysql"],
+          "description": "Only MySQL is supported today. The driver sits behind an interface so Postgres and MSSQL can be added without changing this format."
+        },
+        "host": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "database": { "type": "string", "minLength": 1 },
+        "username": {
+          "type": "string",
+          "description": "Not strictly required by the API, but a bridge without one will not connect to MySQL. Always set it."
+        },
+        "password": {
+          "type": "string",
+          "description": "NEVER produced by export. Accepted on import for automated setup only; prefer leaving it out and entering the password in the import dialog."
+        },
+        "tlsMode": {
+          "type": "string",
+          "enum": ["false", "true", "skip-verify", "preferred"],
+          "default": "false",
+          "description": "\"true\" verifies the server certificate; \"skip-verify\" encrypts without verifying; \"preferred\" uses TLS if the server offers it."
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Extra driver DSN parameters, e.g. {\"charset\": \"utf8mb4\"}."
+        },
+        "bufferMaxAge": {
+          "$ref": "#/$defs/goDuration",
+          "default": "72h",
+          "description": "How long an undelivered record is kept in the store-and-forward buffer. Overflow drops the oldest first."
+        },
+        "bufferMaxBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2147483648,
+          "description": "Size cap on the buffer, in bytes. Whichever of age or size hits first wins. This is the cap that matters in practice — 72h is only reachable at modest sample rates."
+        },
+        "egressRoutes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/egressRoute" },
+          "description": "MACHHUB -> external database."
+        },
+        "ingressRoutes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ingressRoute" },
+          "description": "External database -> MACHHUB."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "egressRoute": {
+      "type": "object",
+      "required": ["id", "selector", "table", "columns", "writeMode"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required, and unique within the bridge for its direction. A UUID is conventional; any stable string works."
+        },
+        "name": { "type": "string", "description": "Human label shown in the UI." },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Omit and the route is imported enabled — a route written into a file is one the author wants running."
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "description": "MQTT-style UNS topic selector. '+' matches one level, '#' matches the rest. e.g. \"plantA/+/temperature\"."
+        },
+        "table": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target table. It must already exist — the bridge never creates tables."
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/columnMapping" }
+        },
+        "writeMode": {
+          "type": "string",
+          "enum": ["insert", "upsert"]
+        },
+        "upsertKeys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Required when writeMode is \"upsert\". Every key must also appear as a mapped column AND be covered by a UNIQUE or PRIMARY key on the target table."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "writeMode": { "const": "upsert" } }, "required": ["writeMode"] },
+          "then": { "required": ["upsertKeys"], "properties": { "upsertKeys": { "minItems": 1 } } }
+        }
+      ]
+    },
+
+    "ingressRoute": {
+      "type": "object",
+      "required": ["id", "watermarkCol", "watermarkKind", "topicTemplate"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique within the bridge." },
+        "name": { "type": "string" },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Omit and the route is imported enabled — a route written into a file is one the author wants running."
+        },
+        "table": {
+          "type": "string",
+          "description": "Source table. Either this or `query` is required."
+        },
+        "query": {
+          "type": "string",
+          "description": "Custom SELECT, used instead of `table`. It must expose watermarkCol and take the watermark as a single `?` bind parameter."
+        },
+        "watermarkCol": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Column the poller resumes from. Index it — every poll filters on it."
+        },
+        "watermarkKind": {
+          "type": "string",
+          "enum": ["autoincrement", "timestamp"],
+          "description": "\"autoincrement\" is safer: a timestamp watermark can skip rows committed out of order relative to their timestamps, which is what safetyLag exists to mitigate."
+        },
+        "safetyLag": {
+          "$ref": "#/$defs/goDuration",
+          "default": "5s",
+          "description": "Timestamp watermarks only. Rows newer than now-safetyLag are left for the next poll so in-flight transactions have committed. Ignored for autoincrement."
+        },
+        "pollInterval": { "$ref": "#/$defs/goDuration", "default": "10s" },
+        "batchSize": { "type": "integer", "minimum": 0, "default": 500 },
+        "topicTemplate": {
+          "type": "string",
+          "minLength": 1,
+          "description": "UNS topic to publish to. Interpolates row columns with Go template syntax, e.g. \"plantA/{{.machine_id}}/status\"."
+        },
+        "payload": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/columnMapping" },
+          "description": "Which row columns become which payload fields. Omit to publish the whole row."
+        },
+        "watermark": {
+          "type": "string",
+          "description": "RUNTIME STATE — never write this in a file. Export strips it, and import drops it: an imported route must start from the beginning rather than skip rows it has never read."
+        },
+        "lastPollDt": {
+          "type": "string",
+          "description": "RUNTIME STATE — never write this in a file."
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [{ "required": ["table"] }, { "required": ["query"] }]
+    },
+
+    "columnMapping": {
+      "type": "object",
+      "required": ["column", "source", "type"],
+      "properties": {
+        "column": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target column name (egress) or payload field name (ingress)."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["value", "timestamp", "topic", "literal", "jsonpath"],
+          "description": "value = the tag value; timestamp = the sample's source time; topic = the full UNS topic; literal = the constant in `expr`; jsonpath = the field of a structured payload at the path in `expr`."
+        },
+        "expr": {
+          "type": "string",
+          "description": "Required when source is \"literal\" (the constant) or \"jsonpath\" (the path, e.g. \"$.motor.rpm\"). Ignored otherwise."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["int", "float", "decimal", "bool", "string", "datetime", "json"],
+          "description": "Declared target type. Checked against the real column type at save time, so a narrowing conversion is refused up front rather than truncating on the first drain."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "source": { "enum": ["literal", "jsonpath"] } },
+            "required": ["source"]
+          },
+          "then": { "required": ["expr"], "properties": { "expr": { "minLength": 1 } } }
+        }
+      ]
+    },
+
+    "goDuration": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h))*$",
+      "description": "Go duration string: a number and a unit, optionally repeated. \"30s\", \"72h\", \"1h30m\". NOT \"3d\" — days are not a Go unit; write \"72h\"."
+    }
+  }
+}
