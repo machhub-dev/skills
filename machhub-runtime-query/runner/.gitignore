@@ -1,0 +1,3 @@
+# Scratch query scripts the agent writes per question — never committed.
+_*.mjs
+*.result.json
