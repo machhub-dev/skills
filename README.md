@@ -192,6 +192,51 @@ For more details, see [Cursor's Agent Skills documentation](https://cursor.com/e
 
 ---
 
+## 📁 Designer Workspace Layout
+
+A MACHHUB project keeps its server-side definitions as JSON on disk, one underscore-prefixed
+folder per panel in the Designer extension. Each panel shows a colored status dot per file
+(synced / modified / new locally / server only) and offers Upload, Download and Compare.
+
+```
+my-app/
+├── _nodered/            # Node-RED workspace (flows, settings, node_modules)
+├── _collections/        # One <name>.json per collection
+├── _processes/          # One <name>.json per process; sub-folders are the process folder
+├── _namespaces/         # One <name>.json per namespace (UNS topic tree + historian)
+├── _permissions/
+│   ├── permissions.json # The feature/action/scope catalogue
+│   └── groups.json      # Group (role) assignments over that catalogue
+├── build/               # Application build output (path is configurable)
+├── src/                 # Your application source
+├── .gitignore
+├── package.json
+└── ...
+```
+
+| Folder | Panel | Identity | Skill |
+| ------ | ----- | -------- | ----- |
+| `_collections/` | Collections | the `name` **inside** the file | `machhub-collection-json` |
+| `_processes/`   | Processes   | the `name` inside the file **plus** its folder under `_processes/` | `machhub-sdk-processes` |
+| `_namespaces/`  | Namespaces  | the root `name` inside the file | `machhub-namespace-json` |
+| `_permissions/` | Permissions | fixed filenames | `machhub-permission-json`, `machhub-groups-json` |
+| `_nodered/`     | NODE-RED Flows | n/a — the whole folder is uploaded | — |
+| `build/`        | Build       | n/a — the whole folder is uploaded | — |
+
+**Two rules that apply to every folder:**
+
+1. **The `name` field inside the document is the identity, not the filename.** The extension
+   never renames or moves your files, so a downloaded record is written back into whichever
+   file already declares that name. Change `name` and you are describing a *different*
+   record — uploading creates a second one rather than renaming the first.
+2. **Two files declaring the same name are one record to the server**, so neither is
+   uploaded; the panel reports the conflict rather than letting one silently win.
+
+Data Bridge has no folder here — it is imported through the web UI, because a bridge carries
+a database credential that should not sit in a file the extension pushes on every deploy.
+
+---
+
 ## �📚 Skills Overview
 
 ### Core SDK Skills (7 skills + 33 templates)
@@ -219,15 +264,29 @@ Integration guides and templates for popular frameworks:
 | `machhub-nuxt-vue`         | Nuxt 3 with Vue 3 Composition API, composables, and plugins | 7         |
 | `machhub-sveltekit-svelte` | SvelteKit with Svelte 5 runes, stores, and load functions   | 7         |
 
-### Additional Skills
+### Workspace File Skills
+
+The JSON documents a MACHHUB project keeps on disk. All but Data Bridge are synced
+by the Designer extension — see [Designer Workspace Layout](#-designer-workspace-layout).
+
+| Skill Name                 | Workspace file                          | Description                                                       |
+| -------------------------- | --------------------------------------- | ----------------------------------------------------------------- |
+| `machhub-collection-json`  | `_collections/<name>.json`              | Collection schemas with relations and indexes                     |
+| `machhub-namespace-json`   | `_namespaces/<name>.json`               | UNS topic trees (folders, tags) and historian settings            |
+| `machhub-permission-json`  | `_permissions/permissions.json`         | The permission catalogue — features, actions and scopes           |
+| `machhub-groups-json`      | `_permissions/groups.json`              | Group (role) assignments over that catalogue                      |
+| `machhub-databridge-json`  | *(not synced — web UI only)*            | Data Bridge — MySQL routes, mappings, watermarks                  |
+
+### Other Skills
 
 | Skill Name                 | Description                                                            |
 | -------------------------- | ---------------------------------------------------------------------- |
-| `machhub-collection-json`  | Collection JSON schema generation with relations and indexes           |
-| `machhub-databridge-json`  | Data Bridge JSON generation — MySQL routes, mappings, watermarks       |
-| `machhub-permission-json`  | Permission JSON generation — features, actions and scopes              |
+| `machhub-sdk-authorization`| Permission checking, group management and access control               |
+| `machhub-sdk-processes`    | Processes — Python/TypeScript functions with trigger-based execution   |
+| `machhub-headless-sdk`     | Running the SDK from a standalone Node script, no browser or UI        |
+| `machhub-runtime-query`    | Answering data questions against the live runtime, read-only           |
 
-**Total: 16 skills with 70 production-ready templates**
+**Total: 20 skills**
 
 ---
 
@@ -327,12 +386,18 @@ skills/
 ├── README.md                      # This file
 ├── TEMPLATES_OVERVIEW.md          # Complete template catalog
 ├── machhub-collection-json/       # Collection JSON schema
-├── machhub-databridge-json/       # Data Bridge JSON schema (3 templates)
+├── machhub-namespace-json/        # Namespace JSON schema (topic tree + historian)
 ├── machhub-permission-json/       # Permission JSON schema
+├── machhub-groups-json/           # Group assignment JSON schema
+├── machhub-databridge-json/       # Data Bridge JSON schema (3 templates)
+├── machhub-headless-sdk/          # Standalone Node scripts
+├── machhub-runtime-query/         # Live read-only runtime queries
 ├── machhub-sdk-initialization/    # SDK setup (4 templates)
 ├── machhub-sdk-architecture/      # Service patterns (4 templates)
 ├── machhub-sdk-collections/       # CRUD operations (4 templates)
 ├── machhub-sdk-authentication/    # Auth & permissions (4 templates)
+├── machhub-sdk-authorization/     # Permission checks & group management
+├── machhub-sdk-processes/         # Processes & trigger-based execution
 ├── machhub-sdk-realtime/          # Real-time (3 templates)
 ├── machhub-sdk-file-handling/     # File operations (3 templates)
 ├── machhub-sdk-advanced/          # Advanced features (4 templates)

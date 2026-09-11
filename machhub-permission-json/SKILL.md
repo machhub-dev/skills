@@ -1,11 +1,15 @@
 ---
 name: machhub-permission-json
-description: Simple guide for users and AI on how to fill in the JSON when importing permission setups (features and scopes) on the MACHHUB Permissions page. No technical knowledge required.
+description: Simple guide for users and AI on how to fill in the JSON when importing permission setups (features and scopes) on the MACHHUB Permissions page or via the Designer extension. No technical knowledge required.
 ---
 
 # Importing Permissions — What to Type
 
-On the **Permissions page**, click the **Import** button and paste a JSON object into the editor. Here is what the JSON should look like:
+On the **Permissions page**, click the **Import** button and paste a JSON object into the editor. The same document also lives at `_permissions/permissions.json` and is uploaded from the **Permissions** panel in the Designer extension.
+
+> This is the *catalogue* of which features/actions/scopes exist. Granting them to roles is a separate file — see [machhub-groups-json](../machhub-groups-json/SKILL.md).
+
+Here is what the JSON should look like:
 
 ```json
 {
@@ -92,6 +96,19 @@ Each item in the `features` array represents one permission group.
 - **Creates** any feature or scope that does not exist yet.
 - **Updates** an existing feature if the `name` matches.
 - **Never deletes** anything — it is safe to run multiple times.
+
+---
+
+## Using it from the Designer extension
+
+1. Put the file at `_permissions/permissions.json`.
+2. Open the **Permissions** panel — `permissions.json` appears next to `groups.json` with a colored status dot (synced / modified / new / server-only).
+3. Right-click it:
+   - **Upload to Server** — push your local catalogue.
+   - **Download from Server** — pull the server's catalogue.
+   - **Compare JSON with Server** — side-by-side diff of local vs server (metadata ignored, both sides sorted, so a freshly downloaded file reads as synced).
+
+The panel's title-bar **Upload** / **Download** buttons sync *both* `permissions.json` and `groups.json` together, and always in that order — a group assignment naming a feature that does not exist yet has nothing to attach to.
 
 ---
 

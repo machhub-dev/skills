@@ -406,9 +406,17 @@ running immediately.
 bridge's page. The download is exactly the format above, so a round trip is
 lossless apart from the deliberately omitted password and watermarks.
 
+**Not synced by the Designer extension.** Unlike collections, processes, namespaces
+and permissions, Data Bridge has no panel and no workspace folder — there is no
+`_databridge/`. A bridge carries a database credential the import dialog asks for
+per bridge, which is exactly what should not sit in a file the extension pushes on
+every deploy. Keep the `.json` wherever you keep the rest of the project and import
+it by hand.
+
 ---
 
 ## Related Skills
 
 - `machhub-collection-json` — collection schemas for the MACHHUB database
 - `machhub-permission-json` — features and scopes import/export
+- `machhub-namespace-json` — UNS topic trees and historian settings

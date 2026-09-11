@@ -25,11 +25,28 @@ related_skills: [machhub-sdk-initialization, machhub-sdk-realtime, machhub-sdk-c
 
 ---
 
+## Where Processes Live on Disk
+
+In a Designer workspace each process is a file at `_processes/<name>.json`, holding exactly
+the document described below — triggers, inputs, outputs and the `code` string. Sub-folders
+under `_processes/` are the process's **folder**, so `_processes/reports/daily.json` is the
+process `daily` in folder `reports`.
+
+A process's identity is the `name` inside the file **plus** that folder, not the filename:
+the same name in two folders is two processes, and two files in one folder declaring the
+same name are one process to the server, so neither is uploaded.
+
+From the **Processes** panel, right-click a process for **Open Code** (edits the `code`
+field as a real `.ts`/`.py` file and saves back into the JSON), **Open JSON**, **Compare
+Code / JSON with Server**, **Upload to Server**, **Download from Server** or **Delete Process**.
+
+---
+
 ## Process Data Model
 
 ```typescript
 type ProcessLanguage = 'python' | 'typescript';
-type TriggerType     = 'cron' | 'interval' | 'tag_change' | 'http' | 'manual';
+type TriggerType     = 'cron' | 'interval' | 'tag_change' | 'http' | 'manual' | 'startup';
 type InputType       = 'tag' | 'sql';
 type OutputType      = 'sql' | 'tag_write';
 
@@ -44,6 +61,7 @@ interface TriggerConfig {
   interval_unit?: string;          // "seconds" | "minutes" | "hours"
   tag?: string;                    // e.g. "namespace/path/tag" (supports MQTT wildcards + and #)
   endpoint?: string;               // e.g. "my-endpoint" → POST /process/my-endpoint
+  startup_delay_seconds?: number;  // for startup triggers: wait this long after the engine starts
 }
 
 interface ProcessInput {
@@ -158,6 +176,19 @@ trigger.data = {
 }
 ```
 > Body fields are also merged into `inputs` — `trigger.data.body` and `inputs` overlap. Use `inputs` for convenience, `trigger.data` for raw request inspection (headers, query params, method).
+
+### Startup
+Fires once when the process engine starts, and again whenever the domain's worker is
+restarted. Use it to seed a tag with a boot value or to warm a cache — a `tag_change`
+trigger does not fire for the value that is already retained when the engine comes up.
+
+```json
+{ "type": "startup", "config": { "startup_delay_seconds": 10 } }
+```
+
+`startup_delay_seconds` is optional and takes decimals (`0.5` = 500 ms); omit it to fire
+immediately. Give dependent processes different delays if one has to settle before the next
+runs. Only **enabled** processes are re-fired on a worker restart.
 
 ### Manual Execution
 Processes with **no triggers** configured can still be run on demand:
@@ -279,7 +310,7 @@ def execute(context):
 context = {
     'inputs':       { ... },         # resolved input values (tag reads, SQL results, HTTP body fields)
     'trigger': {
-        'type':   'cron',            # 'cron' | 'interval' | 'tag_change' | 'http' | 'manual'
+        'type':   'cron',            # 'cron' | 'interval' | 'tag_change' | 'http' | 'manual' | 'startup'
         'config': {
             'cron_expression': '...', # set for cron; or
             'interval_value':  30,    # set for interval; or
@@ -493,8 +524,8 @@ import {
 
 import type {
   ProcessLanguage,   // 'python' | 'typescript'
-  TriggerType,       // 'cron' | 'interval' | 'tag_change' | 'http' | 'manual'
-  TriggerConfig,     // cron_expression, interval_value/unit, tag, endpoint
+  TriggerType,       // 'cron' | 'interval' | 'tag_change' | 'http' | 'manual' | 'startup'
+  TriggerConfig,     // cron_expression, interval_value/unit, tag, endpoint, startup_delay_seconds
   InputType,         // 'tag' | 'sql'
   InputConfig,       // tag, query
   ProcessInput,      // name, type, config

@@ -758,6 +758,23 @@ When generating more than one collection at once, wrap them in an array:
 4. Review the loaded content
 5. Click **Import Collections**
 
+**Method 3: The Designer Extension (`_collections/`)**
+
+Each collection is a file at `_collections/<name>.json`, synced from the **Collections**
+panel. The `name` field *inside* the file is the identity the server matches on — not the
+filename, which the extension never renames. Right-click a collection for **Upload to
+Server**, **Download from Server**, **Compare JSON with Server** or **Delete Collection**;
+the title-bar buttons do all files at once.
+
+Two things differ from the paste/upload methods above:
+
+- A **downloaded** file is the full server record, so it carries `id` and `domain_id`.
+  Those are device-specific and are ignored when the panel compares local against server,
+  so their presence does not mark a file "modified". You can delete them by hand for a
+  portable schema; relations still need `relatedCollectionID.name` either way.
+- Two files declaring the same `name` are one collection to the server, so **neither** is
+  uploaded — the panel reports the conflict rather than letting one silently win.
+
 ### Two-Pass Import Process
 
 The importer handles cross-device relation IDs automatically:
