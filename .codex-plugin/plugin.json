@@ -1,0 +1,42 @@
+{
+  "name": "machhub",
+  "version": "1.0.0",
+  "description": "Official MACHHUB skills: TypeScript SDK integration (collections, auth, realtime tags, historian, processes, files), Angular/Next.js/Nuxt/SvelteKit guides with templates, Designer workspace JSON (collections, namespaces, permissions, groups, Data Bridge), headless scripts and read-only live runtime queries.",
+  "author": {
+    "name": "Intellogic Technology Sdn Bhd",
+    "url": "https://github.com/machhub-dev"
+  },
+  "homepage": "https://github.com/machhub-dev/plugins",
+  "repository": "https://github.com/machhub-dev/plugins",
+  "license": "MPL-2.0",
+  "keywords": [
+    "machhub",
+    "iiot",
+    "uns",
+    "mqtt",
+    "historian",
+    "sdk",
+    "typescript",
+    "angular",
+    "nextjs",
+    "nuxt",
+    "sveltekit"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "MACHHUB",
+    "shortDescription": "Build MACHHUB apps: SDK, framework templates and workspace JSON",
+    "longDescription": "Official MACHHUB skills. Integrate the MACHHUB TypeScript SDK (collections, authentication, authorization, realtime tags, historian, processes, file fields), follow Angular, Next.js, Nuxt and SvelteKit guides with production-ready templates, author Designer workspace JSON (collections, namespaces, permissions, groups, Data Bridge), run headless Node scripts, and answer questions against the live runtime read-only.",
+    "developerName": "Intellogic Technology Sdn Bhd",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/machhub-dev/plugins",
+    "termsOfServiceURL": "https://github.com/machhub-dev/plugins/blob/master/LICENSE",
+    "defaultPrompt": [
+      "Set up the MACHHUB SDK in my Angular app",
+      "Write a collection JSON for products and orders",
+      "How many inactive items are in my runtime?"
+    ],
+    "screenshots": []
+  }
+}

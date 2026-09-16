@@ -1,0 +1,16 @@
+{
+  "name": "machhub-dev",
+  "owner": {
+    "name": "Intellogic Technology Sdn Bhd"
+  },
+  "metadata": {
+    "description": "Official MACHHUB plugins for Cursor."
+  },
+  "plugins": [
+    {
+      "name": "machhub",
+      "source": ".",
+      "description": "MACHHUB SDK, framework and Designer workspace skills with production-ready templates."
+    }
+  ]
+}

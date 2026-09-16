@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "machhub-dev",
+  "description": "Official MACHHUB plugins for Claude Code.",
+  "owner": {
+    "name": "Intellogic Technology Sdn Bhd",
+    "url": "https://github.com/machhub-dev"
+  },
+  "plugins": [
+    {
+      "name": "machhub",
+      "displayName": "MACHHUB",
+      "description": "MACHHUB SDK, framework and Designer workspace skills with production-ready templates.",
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/machhub-dev/plugins",
+      "repository": "https://github.com/machhub-dev/plugins",
+      "license": "MPL-2.0"
+    }
+  ]
+}

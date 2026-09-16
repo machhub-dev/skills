@@ -1,8 +1,10 @@
-# Official MACHHUB Claude Skills (machhub-dev/skills)
+# Official MACHHUB Agent Skills (machhub-dev/plugins)
 
-Official Claude Skills designed to support and enhance MACHHUB development workflows.
+Official [Agent Skills](https://agentskills.io) for MACHHUB development — SDK integration,
+framework-specific guides, Designer workspace JSON, and **57 production-ready templates**.
 
-This repository contains comprehensive Claude skills for MACHHUB, including SDK integration, framework-specific guides, and **57 production-ready templates** for rapid development.
+Works in Claude Code, claude.ai, GitHub Copilot, Cursor, Codex, ChatGPT, Antigravity, Gemini CLI
+and any other host that reads the Agent Skills format. See [Install](#-install).
 
 ---
 
@@ -12,174 +14,172 @@ This repository contains comprehensive Claude skills for MACHHUB, including SDK 
 
 1. Install [MACHHUB Designer Extension](https://marketplace.visualstudio.com) in VSCode
 2. Install MACHHUB SDK: `npm install @machhub-dev/sdk-ts`
-3. Copy templates from this repository
+3. Add these skills to your agent — see [Install](#-install)
 4. Start coding - no configuration needed!
 
 For production deployments, see manual configuration in each skill's documentation.
 
 ---
 
-## � Installation & Setup
+## 📦 Install
 
-### Using Skills in VSCode (GitHub Copilot)
+Every path below tracks this repository, so a `machhub` skill update reaches your project with
+one command. Nothing here copies files you then have to maintain by hand.
 
-GitHub Copilot supports Agent Skills through the [Agent Skills standard](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills). Skills are automatically loaded when placed in the correct directories.
+### Any agent — GitHub CLI
 
-**1. Clone this repository:**
+Works for GitHub Copilot, Cursor, Antigravity, Gemini CLI, Codex, Claude Code and ~40 other
+hosts. Needs GitHub CLI 2.90+.
+
 ```bash
-git clone https://github.com/machhub-dev/skills.git
+# every skill, into the current project
+gh skill install machhub-dev/plugins --all --agent github-copilot
+
+# or pick interactively, for a single agent and just yourself
+gh skill install machhub-dev/plugins --agent cursor --scope user
+
+# pin to a release instead of tracking master
+gh skill install machhub-dev/plugins --all --agent antigravity --pin v1.0.0
 ```
 
-**2. Choose your installation method:**
+Update everything you have installed, from any repo:
 
-**Option A: Project Skills (Repository-specific)**
-
-Copy skills to your project's `.github/skills/` directory:
 ```bash
-# In your project directory
-mkdir -p .github/skills
-cp -r /path/to/machhub/skills/machhub-* .github/skills/
+gh skill update --all
 ```
 
-Structure:
+`--scope project` (the default) writes into the repository you are standing in, so the files are
+committed and every teammate — and Copilot's cloud agent — gets them. `gh skill update` then
+produces a reviewable diff instead of silent drift. `--scope user` installs once for all your
+projects.
+
+Agent ids you are most likely to want: `github-copilot`, `claude-code`, `cursor`, `codex`,
+`antigravity`, `antigravity-cli`, `gemini-cli`. Run `gh skill install --help` for the full list.
+
+**Where the files land**
+
+| Agent | Project scope | User scope |
+| ----- | ------------- | ---------- |
+| GitHub Copilot | `.agents/skills/` | `~/.copilot/skills/` |
+| Cursor | `.agents/skills/` | `~/.cursor/skills/` |
+| Codex | `.agents/skills/` | `~/.agents/skills/` |
+| Antigravity (IDE) | `.agents/skills/` | `~/.gemini/antigravity/skills/` |
+| Antigravity CLI | `.agents/skills/` | `~/.gemini/antigravity-cli/skills/` |
+| Gemini CLI | `.agents/skills/` | `~/.gemini/skills/` |
+| Claude Code | `.claude/skills/` | `~/.claude/skills/` |
+
+Most agents share `.agents/skills/`, so installing for several of them writes each skill once.
+
+### Claude Code — plugin
+
 ```
-your-project/
-├── .github/
-│   └── skills/
-│       ├── machhub-sdk-initialization/
-│       │   └── SKILL.md
-│       ├── machhub-angular/
-│       │   └── SKILL.md
-│       └── ...
+/plugin marketplace add machhub-dev/plugins
+/plugin install machhub@machhub-dev
 ```
 
-**Option B: Personal Skills (Global, all projects)**
+Or from a shell: `claude plugin marketplace add machhub-dev/plugins && claude plugin install machhub@machhub-dev`.
+Update with `/plugin marketplace update machhub-dev`.
 
-Copy skills to your home directory for use across all projects:
+To roll it out to a whole team, commit this to the project's `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "machhub-dev": { "source": { "source": "github", "repo": "machhub-dev/plugins" } }
+  },
+  "enabledPlugins": { "machhub@machhub-dev": true }
+}
+```
+
+### Codex — plugin
+
 ```bash
-# Copy to personal skills directory
-mkdir -p ~/.copilot/skills
-cp -r /path/to/machhub/skills/machhub-* ~/.copilot/skills/
+codex plugin marketplace add machhub-dev/plugins
+codex plugin add machhub@machhub-dev
 ```
 
-Structure:
+Update with `codex plugin marketplace upgrade`.
+
+### Cursor — plugin
+
+Cursor installs plugins from a marketplace, and this repository is one. A team admin adds it
+once (Teams plan and above):
+
+1. **Dashboard → Plugins → Team Marketplaces → Add Marketplace → Import from Repo**
+2. Point it at `https://github.com/machhub-dev/plugins`
+3. Turn on **Enable Auto Refresh** so pushes to `master` roll out automatically
+
+Members then open **Customize**, find **MACHHUB**, and **Install** at project or user scope.
+
+On a personal plan, use the GitHub CLI route above with `--agent cursor`.
+
+### Antigravity
+
+The IDE reads workspace skills from `.agents/skills/`, which is exactly where
+`gh skill install --agent antigravity` puts them — nothing else to configure.
+
+The CLI can also take the whole repository as a plugin — the root `plugin.json` and `skills/`
+are what it needs:
+
+```bash
+git clone https://github.com/machhub-dev/plugins.git machhub-plugins
+agy plugin install ./machhub-plugins
 ```
-~/.copilot/skills/
-├── machhub-sdk-initialization/
-│   └── SKILL.md
-├── machhub-angular/
-│   └── SKILL.md
-└── ...
-```
 
-**3. Verify skills are loaded:**
+### ChatGPT — workspace marketplace
 
-No configuration needed! GitHub Copilot automatically discovers skills in:
-- `.github/skills/` (project-specific)
-- `.claude/skills/` (alternative project location)
-- `~/.copilot/skills/` (personal, global)
-- `~/.claude/skills/` (alternative personal location)
+A workspace admin or owner imports the marketplace once for everyone (Business, Enterprise, Edu):
 
-Open Copilot Chat in VSCode (`Ctrl+Alt+I`) and ask:
-```
-"What MACHHUB skills are available?"
-```
+1. **Workspace settings → Plugins → Add → Import marketplace**
+2. Repository URL: `https://github.com/machhub-dev/plugins` (no subdirectory, branch `master`)
+3. Authorize GitHub, then set the `machhub` plugin's availability for your roles
 
-**Note:** Agent Skills work with:
-- Copilot coding agent (Chat in IDE)
-- GitHub Copilot CLI
-- Visual Studio Code Insiders (stable support coming soon)
+ChatGPT re-syncs daily; **Sync now** pulls a change immediately.
 
-For more details, see [GitHub's Agent Skills documentation](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills).
+### claude.ai and ChatGPT — upload zips
+
+Every [release](https://github.com/machhub-dev/plugins/releases) attaches one zip per skill
+(`machhub-sdk-collections.zip`, …) plus `machhub-plugin.zip` for the whole plugin.
+
+- **claude.ai, one skill:** Customize → Skills → **+** → Create skill → upload the skill zip
+- **claude.ai Team/Enterprise, whole plugin:** Organization settings → Plugins → upload `machhub-plugin.zip`
+  (GitHub sync there only accepts private repositories, so this public repo is uploaded as a zip)
+- **ChatGPT, one skill:** Plugins → Skills → Create → Upload from your computer
+
+Build the zips yourself with `node scripts/package-skills.mjs` (written to `dist/`).
+
+### Updating, at a glance
+
+| Installed with | Update command |
+| -------------- | -------------- |
+| `gh skill install` | `gh skill update --all` |
+| Claude Code plugin | `/plugin marketplace update machhub-dev` |
+| Codex plugin | `codex plugin marketplace upgrade` |
+| Cursor marketplace | automatic with Auto Refresh, or **Refresh** |
+| ChatGPT workspace | daily sync, or **Sync now** |
+| Uploaded zip | re-upload from the newest release |
 
 ---
 
-### Using Skills in Cursor
+## 🧷 Manual copy (last resort)
 
-Cursor supports Agent Skills through the [Agent Skills standard](https://cursor.com/en-US/docs/context/skills). Skills are automatically discovered when placed in the correct directories.
+Only if none of the above fit — an air-gapped machine, or an agent the GitHub CLI does not know.
+These files do not update themselves; re-copy them after each release.
 
-**1. Clone this repository:**
 ```bash
-git clone https://github.com/machhub-dev/skills.git
+git clone https://github.com/machhub-dev/plugins.git machhub-plugins
+mkdir -p .agents/skills
+cp -r machhub-plugins/skills/machhub-* .agents/skills/
 ```
 
-**2. Choose your installation method:**
-
-**Option A: Project Skills (Repository-specific)**
-
-Copy skills to your project's `.cursor/skills/` directory:
-```bash
-# In your project directory
-mkdir -p .cursor/skills
-cp -r /path/to/machhub/skills/machhub-* .cursor/skills/
-```
-
-Structure:
-```
-your-project/
-├── .cursor/
-│   └── skills/
-│       ├── machhub-sdk-initialization/
-│       │   └── SKILL.md
-│       ├── machhub-angular/
-│       │   └── SKILL.md
-│       └── ...
-```
-
-**Option B: Personal Skills (Global, all projects)**
-
-Copy skills to your home directory for use across all projects:
-```bash
-# Copy to personal skills directory
-mkdir -p ~/.cursor/skills
-cp -r /path/to/machhub/skills/machhub-* ~/.cursor/skills/
-```
-
-Structure:
-```
-~/.cursor/skills/
-├── machhub-sdk-initialization/
-│   └── SKILL.md
-├── machhub-angular/
-│   └── SKILL.md
-└── ...
-```
-
-**3. Verify skills are loaded:**
-
-No configuration needed! Cursor automatically discovers skills in:
-- `.cursor/skills/` (project-level)
-- `.claude/skills/` (project-level, Claude compatibility)
-- `.codex/skills/` (project-level, Codex compatibility)
-- `~/.cursor/skills/` (user-level, global)
-- `~/.claude/skills/` (user-level, Claude compatibility)
-- `~/.codex/skills/` (user-level, Codex compatibility)
-
-**View discovered skills:**
-1. Open Cursor Settings (`Cmd+Shift+J` on Mac, `Ctrl+Shift+J` on Windows/Linux)
-2. Navigate to "Rules"
-3. Skills appear in the "Agent Decides" section
-
-**Using skills in chat:**
-- Type `/` in Agent chat to see available skills
-- Skills are automatically applied when relevant
-- Or explicitly invoke: `/machhub-sdk-initialization`
-
-**Optional: Install directly from GitHub**
-
-Instead of manual copying, you can import from GitHub:
-1. Open Cursor Settings → Rules
-2. Click "Add Rule" in Project Rules section
-3. Select "Remote Rule (Github)"
-4. Enter: `https://github.com/machhub-dev/skills`
-
-For more details, see [Cursor's Agent Skills documentation](https://cursor.com/en-US/docs/context/skills).
+`.agents/skills/` is read by Copilot, Cursor, Codex, Antigravity and Gemini CLI. Claude Code
+reads `.claude/skills/` instead. Both directory names also work at `~/` for a global install.
 
 ---
 
-### Quick Verification Test
+## ✅ Verify the install
 
-**In VSCode or Cursor, ask:**
+**In any agent, ask:**
 ```
 "Initialize MACHHUB SDK in my Angular project using zero-config"
 ```
@@ -237,7 +237,7 @@ a database credential that should not sit in a file the extension pushes on ever
 
 ---
 
-## �📚 Skills Overview
+## 📚 Skills Overview
 
 ### Core SDK Skills (7 skills + 33 templates)
 
@@ -382,29 +382,45 @@ For production, use manual config templates and set environment variables.
 ## 📂 Repository Structure
 
 ```
-skills/
+plugins/
+├── .claude-plugin/
+│   ├── plugin.json                # Claude Code plugin manifest
+│   └── marketplace.json           # Claude Code marketplace (machhub-dev)
+├── .cursor-plugin/
+│   ├── plugin.json                # Cursor plugin manifest
+│   └── marketplace.json           # Cursor marketplace (machhub-dev)
+├── .codex-plugin/
+│   └── plugin.json                # Codex / ChatGPT plugin manifest
+├── .agents/plugins/
+│   └── marketplace.json           # Codex / ChatGPT marketplace (machhub-dev)
+├── scripts/
+│   ├── validate.mjs               # Spec + manifest checks
+│   └── package-skills.mjs         # Skill + plugin zips for upload
+├── plugin.json                    # Antigravity plugin manifest
 ├── README.md                      # This file
+├── PUBLISHING.md                  # Release + marketplace submission guide
 ├── TEMPLATES_OVERVIEW.md          # Complete template catalog
-├── machhub-collection-json/       # Collection JSON schema
-├── machhub-namespace-json/        # Namespace JSON schema (topic tree + historian)
-├── machhub-permission-json/       # Permission JSON schema
-├── machhub-groups-json/           # Group assignment JSON schema
-├── machhub-databridge-json/       # Data Bridge JSON schema (3 templates)
-├── machhub-headless-sdk/          # Standalone Node scripts
-├── machhub-runtime-query/         # Live read-only runtime queries
-├── machhub-sdk-initialization/    # SDK setup (4 templates)
-├── machhub-sdk-architecture/      # Service patterns (4 templates)
-├── machhub-sdk-collections/       # CRUD operations (4 templates)
-├── machhub-sdk-authentication/    # Auth & permissions (4 templates)
-├── machhub-sdk-authorization/     # Permission checks & group management
-├── machhub-sdk-processes/         # Processes & trigger-based execution
-├── machhub-sdk-realtime/          # Real-time (3 templates)
-├── machhub-sdk-file-handling/     # File operations (3 templates)
-├── machhub-sdk-advanced/          # Advanced features (4 templates)
-├── machhub-angular/               # Angular integration (6 templates)
-├── machhub-nextjs-react/          # Next.js + React (7 templates)
-├── machhub-nuxt-vue/              # Nuxt + Vue (7 templates)
-└── machhub-sveltekit-svelte/      # SvelteKit + Svelte (7 templates)
+└── skills/
+    ├── machhub-collection-json/    # Collection JSON schema
+    ├── machhub-namespace-json/     # Namespace JSON schema (topic tree + historian)
+    ├── machhub-permission-json/    # Permission JSON schema
+    ├── machhub-groups-json/        # Group assignment JSON schema
+    ├── machhub-databridge-json/    # Data Bridge JSON schema (3 templates)
+    ├── machhub-headless-sdk/       # Standalone Node scripts
+    ├── machhub-runtime-query/      # Live read-only runtime queries
+    ├── machhub-sdk-initialization/ # SDK setup (4 templates)
+    ├── machhub-sdk-architecture/   # Service patterns (4 templates)
+    ├── machhub-sdk-collections/    # CRUD operations (4 templates)
+    ├── machhub-sdk-authentication/ # Auth & permissions (4 templates)
+    ├── machhub-sdk-authorization/  # Permission checks & group management
+    ├── machhub-sdk-processes/      # Processes & trigger-based execution
+    ├── machhub-sdk-realtime/       # Real-time (3 templates)
+    ├── machhub-sdk-file-handling/  # File operations (3 templates)
+    ├── machhub-sdk-advanced/       # Advanced features (4 templates)
+    ├── machhub-angular/            # Angular integration (6 templates)
+    ├── machhub-nextjs-react/       # Next.js + React (7 templates)
+    ├── machhub-nuxt-vue/           # Nuxt + Vue (7 templates)
+    └── machhub-sveltekit-svelte/   # SvelteKit + Svelte (7 templates)
 ```
 
 ---

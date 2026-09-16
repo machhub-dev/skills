@@ -1,0 +1,26 @@
+{
+  "name": "machhub",
+  "displayName": "MACHHUB",
+  "version": "1.0.0",
+  "description": "Official MACHHUB skills: TypeScript SDK integration (collections, auth, realtime tags, historian, processes, files), Angular/Next.js/Nuxt/SvelteKit guides with templates, Designer workspace JSON (collections, namespaces, permissions, groups, Data Bridge), headless scripts and read-only live runtime queries.",
+  "author": {
+    "name": "Intellogic Technology Sdn Bhd",
+    "url": "https://github.com/machhub-dev"
+  },
+  "homepage": "https://github.com/machhub-dev/plugins",
+  "repository": "https://github.com/machhub-dev/plugins",
+  "license": "MPL-2.0",
+  "keywords": [
+    "machhub",
+    "iiot",
+    "uns",
+    "mqtt",
+    "historian",
+    "sdk",
+    "typescript",
+    "angular",
+    "nextjs",
+    "nuxt",
+    "sveltekit"
+  ]
+}
