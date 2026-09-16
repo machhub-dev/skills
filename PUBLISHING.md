@@ -20,6 +20,27 @@ The root `plugin.json` is Antigravity's. Codex looks at the root first but ignor
 whose `$schema` is not `agent-plugins.org`, so it falls through to `.codex-plugin/plugin.json`.
 The validator pins that `$schema` for exactly this reason — do not change it.
 
+## Layout: one plugin at the repo root
+
+The repository is named `plugins` but holds a single plugin, `machhub`, at its root. That is
+deliberate — a flat layout until a second plugin actually exists.
+
+When one does (the MCP plugin is the likely first), move to `plugins/<name>/` per plugin. The
+move touches only internal paths; **every install command in the README stays identical**:
+
+| Change | From | To |
+| ------ | ---- | -- |
+| `.claude-plugin/marketplace.json` | `"source": "./"` | `"source": "./plugins/machhub"` |
+| `.agents/plugins/marketplace.json` | `"path": "./"` | `"path": "./plugins/machhub"` |
+| `.cursor-plugin/marketplace.json` | `"source": "."` | `"source": "plugins/machhub"` |
+| Manifests, `skills/`, `assets/`, root `plugin.json` | repo root | `plugins/machhub/` |
+| `agy plugin install` | `./machhub-plugins` | `./machhub-plugins/plugins/machhub` |
+| Manual copy path | `machhub-plugins/skills/` | `machhub-plugins/plugins/machhub/skills/` |
+
+`gh skill` discovers both shapes — `skills/*/SKILL.md` and `plugins/{scope}/skills/*/SKILL.md` —
+so installs and `gh skill update` survive the move. `scripts/package-skills.mjs` hardcodes
+`skills/`, so update it in the same commit.
+
 ## Adding or changing a skill
 
 1. Put it at `skills/<name>/SKILL.md`. The folder name must equal `name:` in the frontmatter.
