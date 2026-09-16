@@ -37,6 +37,9 @@
       "Write a collection JSON for products and orders",
       "How many inactive items are in my runtime?"
     ],
+    "brandColor": "#0B0F14",
+    "composerIcon": "./assets/machhub-icon.svg",
+    "logo": "./assets/machhub-icon.png",
     "screenshots": []
   }
 }

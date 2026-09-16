@@ -31,6 +31,6 @@ for (const name of skills) {
   git('archive', '--format=zip', `--prefix=${name}/`, '-o', join(dist, `${name}.zip`), `${ref}:skills/${name}`);
 }
 
-git('archive', '--format=zip', '-o', join(dist, 'machhub-plugin.zip'), ref, '.claude-plugin', '.codex-plugin', 'skills', 'LICENSE', 'README.md');
+git('archive', '--format=zip', '-o', join(dist, 'machhub-plugin.zip'), ref, '.claude-plugin', '.codex-plugin', 'skills', 'assets', 'LICENSE', 'README.md');
 
 console.log(`✓ ${readdirSync(dist).length} zips written to dist/ (${skills.length} skills + plugin)`);

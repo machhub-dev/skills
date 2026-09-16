@@ -87,9 +87,8 @@ accepted. Before submitting, you need:
 
 - **A verified developer or business identity** on the OpenAI Platform, and Apps Management
   write access in that organization.
-- **Brand assets** — not in the repo yet. Add them under `assets/` and reference them from
-  `.codex-plugin/plugin.json` → `interface`: `logo` (e.g. `./assets/logo.png`), `composerIcon`
-  (e.g. `./assets/icon.svg`), `brandColor`, and optionally PNG `screenshots`.
+- **Brand assets** — the logo, icon and `brandColor` are wired up. Still missing: `screenshots`,
+  which must be PNGs under `./assets/` (the validator enforces both rules).
 - **Public URLs** in `interface`: `privacyPolicyURL` (required, not set yet), a support URL, and
   `websiteURL` / `termsOfServiceURL` pointing at MACHHUB's own site rather than this repository.
 
@@ -102,8 +101,7 @@ customers should install today. Getting into the public marketplace at
 [cursor.com/marketplace](https://cursor.com/marketplace) goes through Cursor; the manifests in
 `.cursor-plugin/` already validate against
 [Cursor's published schemas](https://github.com/cursor/plugins/tree/main/schemas), which is the
-precondition either way. A `logo` path in `.cursor-plugin/plugin.json` is worth adding when the
-brand assets land.
+precondition either way, and `logo` already points at the MACHHUB icon.
 
 ### GitHub / `gh skill search`
 

@@ -393,6 +393,11 @@ plugins/
 │   └── plugin.json                # Codex / ChatGPT plugin manifest
 ├── .agents/plugins/
 │   └── marketplace.json           # Codex / ChatGPT marketplace (machhub-dev)
+├── assets/
+│   ├── machhub-logo.svg            # Wordmark-free logo, light backgrounds
+│   ├── machhub-logo-dark.svg       # Same logo, dark backgrounds
+│   ├── machhub-icon.svg            # Tile icon (Codex composer)
+│   └── machhub-icon.png            # Tile icon 512px (Cursor + Codex)
 ├── scripts/
 │   ├── validate.mjs               # Spec + manifest checks
 │   └── package-skills.mjs         # Skill + plugin zips for upload

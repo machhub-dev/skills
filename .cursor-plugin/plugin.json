@@ -10,6 +10,7 @@
   "homepage": "https://github.com/machhub-dev/plugins",
   "repository": "https://github.com/machhub-dev/plugins",
   "license": "MPL-2.0",
+  "logo": "assets/machhub-icon.png",
   "category": "developer-tools",
   "keywords": [
     "machhub",

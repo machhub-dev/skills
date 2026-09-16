@@ -143,6 +143,24 @@ if ((codexPlugin.interface?.defaultPrompt ?? []).some((p) => p.length > 128)) {
   fail('.codex-plugin/plugin.json: interface.defaultPrompt entries must be at most 128 chars');
 }
 
+// Branding assets are referenced by relative path — a missing file shows up as a blank card.
+const assetRefs = [
+  ['.cursor-plugin/plugin.json', cursorPlugin.logo],
+  ['.codex-plugin/plugin.json', codexPlugin.interface?.logo],
+  ['.codex-plugin/plugin.json', codexPlugin.interface?.composerIcon],
+  ...(codexPlugin.interface?.screenshots ?? []).map((s) => ['.codex-plugin/plugin.json', s]),
+];
+for (const [rel, ref] of assetRefs) {
+  if (ref && !existsSync(join(root, ref.replace(/^\.\//, '')))) {
+    fail(`${rel}: asset "${ref}" does not exist`);
+  }
+}
+for (const shot of codexPlugin.interface?.screenshots ?? []) {
+  if (!/^\.\/assets\/.+\.png$/.test(shot)) {
+    fail(`.codex-plugin/plugin.json: screenshot "${shot}" must be a PNG under ./assets/`);
+  }
+}
+
 const tagIndex = process.argv.indexOf('--tag');
 if (tagIndex !== -1) {
   const tag = process.argv[tagIndex + 1];
