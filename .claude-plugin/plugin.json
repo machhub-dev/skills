@@ -1,7 +1,7 @@
 {
   "name": "machhub",
   "displayName": "MACHHUB",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Official MACHHUB skills: TypeScript SDK integration (collections, auth, realtime tags, historian, processes, files), Angular/Next.js/Nuxt/SvelteKit guides with templates, Designer workspace JSON (collections, namespaces, permissions, groups, Data Bridge), headless scripts and read-only live runtime queries.",
   "author": {
     "name": "Intellogic Technology Sdn Bhd",
