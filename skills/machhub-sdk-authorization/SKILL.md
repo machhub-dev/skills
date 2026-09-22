@@ -1,558 +1,106 @@
 ---
 name: machhub-sdk-authorization
-description: Authorization, permission checking, group management, and access control with MACHHUB SDK.
+description: Check what the logged-in MACHHUB user may do (`checkAction`, `checkPermission`), and administer users, groups and permissions through the SDK. Covers features, actions and scopes, how MACHHUB matches them, and which admin operations the SDK has and lacks.
 license: MPL-2.0
 metadata:
-  related_skills: "machhub-sdk-initialization, machhub-sdk-authentication, machhub-sdk-architecture"
+  related_skills: "machhub-sdk-authentication, machhub-permission-json, machhub-groups-json"
 ---
 
-## Overview
+## The model
 
-This skill covers **authorization** operations in the MACHHUB SDK, including permission checking, action resolution, group management, and user administration.
+A permission is **feature + action + scope**, granted to a **group**. Users belong to groups.
 
-**Use this skill when:**
-- Checking whether a user has a specific permission
-- Getting all allowed actions for a feature
-- Fetching, creating, or managing groups
-- Assigning permissions to groups
-- Adding users to groups
-- Managing users (listing, creating)
-- Building access-controlled UI components or routes
+- **Feature**: what is being accessed. It's either a built-in feature (below) or one your app defines (import it with `machhub-permission-json`).
+- **Action**: usually `read` or `read-write`, where **`read-write` also grants `read`**. A feature your app defines can also have custom actions (e.g. `approve`), which `checkPermission` matches exactly.
+- **Scope**: how far the grant reaches. The ranking is `self` < `user-defined` < `domain` < `all`. A grant at a wider scope satisfies a check at a narrower one. A grant with scope `nil` matches any scope, and `all` also reaches other domains.
 
-**Prerequisites:**
-- SDK initialized — see `machhub-sdk-initialization`
-- User authenticated — see `machhub-sdk-authentication`
+Superusers pass every check.
 
-**Key Concepts:**
-- **Feature** — a resource or capability (e.g. `"collections"`, `"users"`, `"flows"`)
-- **Action** — `"read"`, `"read-write"`, or any custom string
-- **Scope** — `"self"` (own data), `"domain"` (domain-wide), `"nil"` (no scope restriction), or any custom string
-- **Group** — a named set of users sharing a set of permissions (FeatureAccess entries)
+**The server enforces permissions on every request.** Checks in the app only decide what to *show*. Hiding a button is not security, and you don't need to re-implement the server's checks.
 
 ---
 
-## Permission Checking
+## Checking the current user
 
-### Check a Single Permission
+```ts
+// Which actions does the user have on a feature at a scope?
+const { actions } = await sdk.auth.checkAction('orders', 'domain');
+const canView = actions.includes('read') || actions.includes('read-write');
+const canEdit = actions.includes('read-write');
 
-```typescript
-// Returns { permission: boolean }
-const { permission } = await sdk.auth.checkPermission(
-  'collections',   // feature
-  'read',          // action: 'read' | 'read-write' | custom
-  'domain'         // scope: any string — 'self', 'domain', 'nil', or custom
-);
-
-if (permission) {
-  // User has access
-}
+// Or ask one yes/no question
+const { permission } = await sdk.auth.checkPermission('orders', 'read-write', 'domain');
 ```
 
-Signature: `checkPermission(feature: string, action: string, scope: string): Promise<PermissionResponse>`
+| Call | Returns |
+|---|---|
+| `checkAction(feature, scope)` | `{ actions: string[] }` |
+| `checkPermission(feature, action, scope)` | `{ permission: boolean }` |
 
-### Get All Allowed Actions for a Feature
-
-```typescript
-// Returns { actions: string[] }
-const { actions } = await sdk.auth.checkAction('collections', 'domain');
-// e.g. actions = ['read', 'read-write']
-```
-
-Signature: `checkAction(feature: string, scope: string): Promise<ActionResponse>`
+There is **no** `hasPermission`, `hasAnyPermission`, or `isInGroup`. Use the two calls above. Fetch once per page (or once at login) and keep the result; don't call them on every render.
 
 ---
 
-## Group Permissions
+## Administration
 
-### Get All Permissions in the Domain
+These calls need the caller to hold the matching feature (`users` or `groups`, usually `read-write`). Otherwise the server rejects them.
 
-```typescript
-// Returns Feature[] — all permissions defined across every group in the domain
-const permissions = await sdk.auth.getPermissions();
-// e.g. [{ name: 'collections', action: 'read-write', scope: 'domain' }, ...]
-```
+**Users**
 
-Signature: `getPermissions(): Promise<Feature[]>`
+| Call | Notes |
+|---|---|
+| `getUsers()` | Users in the current domain |
+| `getUserById(userId)` | |
+| `createUser(firstName, lastName, username, email, password, number, userImage)` | All positional strings. Pass `''` for an empty image |
+| `updateUser(userId, { firstName?, lastName?, username?, email?, number?, userImage?, groupIDs? })` | Partial update. **`groupIDs` replaces the user's groups** (`[]` removes all), and omitting it leaves groups alone |
+| `deleteUser(userId)` | Soft delete, which also removes memberships |
+| `resetPassword(userId)` | Returns `{ password }`, a newly generated one |
 
-### Add Permissions to a Group
+**Groups and permissions**
 
-Each permission entry must have a valid `scope`: `"self"`, `"domain"`, or `"nil"`.
+| Call | Notes |
+|---|---|
+| `getGroups()` | `Group[]`: `{ id, name, features: {name, action, scope, domain}[], user_ids }` |
+| `createGroup(name, features)` | `features: { name, action, scope }[]`. The name `Superuser` is reserved |
+| `addUserToGroup(userId, groupId)` | Adds one membership |
+| `addPermissionsToGroup(groupId, features)` | Appends grants |
+| `getPermissions()` | The domain's permission list, as `{ name, action, scope }[]` |
 
-```typescript
-import type { Feature } from '@machhub-dev/sdk-ts';
+**Not in the SDK:** renaming, updating, or deleting a group; removing a single grant; removing a user from one group. To change a user's memberships, use `updateUser(userId, { groupIDs })` with the full new list. For bulk role setups, use the Permissions page import (`machhub-groups-json`).
 
-const permissions: Feature[] = [
-  { name: 'collections', action: 'read-write', scope: 'domain' },
-  { name: 'flows',       action: 'read',       scope: 'domain' },
-  { name: 'api_keys',    action: 'read-write', scope: 'self'   },
-];
-
-await sdk.auth.addPermissionsToGroup(groupId, permissions);
-```
-
-Signature: `addPermissionsToGroup(group_id: string, permissions: Feature[]): Promise<ActionResponse>`
-
----
-
-## Group Management
-
-### Get All Groups (with users)
-
-```typescript
-const groups = await sdk.auth.getGroups();
-// Each group: { id, name, features: [{name, action, scope, domain}][], user_ids }
-```
-
-### Create a Group
-
-```typescript
-import type { Feature } from '@machhub-dev/sdk-ts';
-
-const features: Feature[] = [
-  { name: 'collections', action: 'read', scope: 'domain' },
-];
-
-const group = await sdk.auth.createGroup('Editors', features);
-// Returns: { id, name, ... }
-```
-
-Signature: `createGroup(name: string, features: Feature[]): Promise<Group>`
-
-**Notes:**
-- Group name `"Superuser"` is reserved and will be rejected.
-- Features can also be added later via `addPermissionsToGroup`.
-
-### Add a User to a Group
-
-```typescript
-await sdk.auth.addUserToGroup(userId, groupId);
-```
-
-Signature: `addUserToGroup(userId: string, groupId: string): Promise<ActionResponse>`
+IDs: pass the `id` from `getUsers()` or `getGroups()` as a string, using `RecordIDToString(id)` from `@machhub-dev/sdk-ts`. Never build IDs by hand.
 
 ---
 
-## User Management
+## Built-in features
 
-### Get All Users
+`applications`, `users`, `groups`, `api_keys`, `upstreams`, `namespace`, `historian`, `raw_query`, `collections`, `processes`, `flows`, `nodered`, `integration`, `dashboard`, `logs`, `general_settings`, `gateway`, `license`, `backups`, `restores`, `assistant`.
 
-```typescript
-const users = await sdk.auth.getUsers();
-```
-
-### Get User by ID
-
-```typescript
-const user = await sdk.auth.getUserById(userId);
-```
-
-### Create a User
-
-```typescript
-await sdk.auth.createUser(
-  'Jane',               // firstName
-  'Smith',              // lastName
-  'janesmith',          // username
-  'jane@example.com',   // email
-  'securePassword123',  // password
-  '+60123456789',       // phone number
-  null                  // userImage (base64 string or null)
-);
-```
-
-Signature: `createUser(firstName, lastName, username, email, password, number, userImage): Promise<User>`
+For app-specific rules like "can approve orders", define your own feature (e.g. `orders_approval`) in the Permissions page import, grant it to groups, and check it with `checkAction`.
 
 ---
 
-## Getting the Current User's Groups & Permissions
+## UI pattern
 
-```typescript
-import { RecordIDToString } from '@machhub-dev/sdk-ts';
+```ts
+// Load once, then use synchronously in the UI
+const perms = new Map<string, string[]>();
 
-// 1. Get user + their group IDs
-const user = await sdk.auth.getCurrentUser();
-const groupIds = user.group_ids ?? [];
-
-// 2. Get all domain groups
-const allGroups = await sdk.auth.getGroups();
-
-// 3. Filter to the ones this user belongs to
-const userGroups = allGroups.filter(group => {
-  if (!group.id) return false;
-  return groupIds.includes(RecordIDToString(group.id));
-});
-
-// 4. Collect all permissions across the user's groups
-const allPermissions = userGroups.flatMap(g => g.features ?? []);
-```
-
----
-
-## Authorization Service Pattern
-
-```typescript
-// services/authorization.service.ts
-import { getOrInitializeSDK } from './sdk.service';
-import type { Feature } from '@machhub-dev/sdk-ts';
-import { RecordIDToString } from '@machhub-dev/sdk-ts';
-
-class AuthorizationService {
-  async canAccess(feature: string, action: string, scope: string): Promise<boolean> {
+export async function loadPermissions(features: string[], scope = 'domain') {
+  const sdk = await getSDK();
+  await Promise.all(features.map(async (f) => {
     try {
-      const sdk = await getOrInitializeSDK();
-      const { permission } = await sdk.auth.checkPermission(feature, action, scope);
-      return permission;
+      perms.set(f, (await sdk.auth.checkAction(f, scope)).actions ?? []);
     } catch {
-      return false;
+      perms.set(f, []);
     }
-  }
-
-  async getAllowedActions(feature: string, scope: string): Promise<string[]> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      const { actions } = await sdk.auth.checkAction(feature, scope);
-      return actions ?? [];
-    } catch {
-      return [];
-    }
-  }
-
-  async getDomainPermissions(): Promise<Feature[]> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      return await sdk.auth.getPermissions();
-    } catch {
-      return [];
-    }
-  }
-
-  async getUserGroups() {
-    const sdk = await getOrInitializeSDK();
-    const user = await sdk.auth.getCurrentUser();
-    const groupIds = user.group_ids ?? [];
-    if (groupIds.length === 0) return [];
-    const all = await sdk.auth.getGroups();
-    return all.filter(g => g.id && groupIds.includes(RecordIDToString(g.id)));
-  }
+  }));
 }
 
-export const authorizationService = new AuthorizationService();
+export const can = (feature: string, action: 'read' | 'read-write') => {
+  const a = perms.get(feature) ?? [];
+  return a.includes(action) || (action === 'read' && a.includes('read-write'));
+};
 ```
 
----
-
-## Permission Guard Pattern
-
-```typescript
-// guards/permission.guard.ts
-import { authorizationService } from '../services/authorization.service';
-
-export async function requirePermission(
-  feature: string,
-  action: string,
-  scope: string,
-  redirectTo = '/unauthorized'
-): Promise<boolean> {
-  const allowed = await authorizationService.canAccess(feature, action, scope);
-  if (!allowed) {
-    window.location.href = redirectTo;
-    return false;
-  }
-  return true;
-}
-
-// Usage
-const canEdit = await requirePermission('collections', 'read-write', 'domain');
-```
-
----
-
-## Templates
-
-### Template 1: Authorization Service
-
-**File:** `src/services/authorization.service.ts`
-
-**Purpose:** Centralized permission and group management service
-
-**Code:**
-
-```typescript
-// filepath: src/services/authorization.service.ts
-import { getOrInitializeSDK } from './sdk.service';
-import type { Feature, Group } from '@machhub-dev/sdk-ts';
-import { RecordIDToString } from '@machhub-dev/sdk-ts';
-
-class AuthorizationService {
-  /**
-   * Check if the current user has a specific permission.
-   * @param feature - e.g. 'collections', 'flows', 'users'
-   * @param action  - e.g. 'read', 'read-write', or a custom action string
-   * @param scope   - any string, e.g. 'self', 'domain', 'nil', or a custom scope
-   */
-  async canAccess(feature: string, action: string, scope: string): Promise<boolean> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      const { permission } = await sdk.auth.checkPermission(feature, action, scope);
-      return permission;
-    } catch (error) {
-      console.error('Permission check failed:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get all actions the current user is allowed for a feature/scope.
-   */
-  async getAllowedActions(feature: string, scope: string): Promise<string[]> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      const { actions } = await sdk.auth.checkAction(feature, scope);
-      return actions ?? [];
-    } catch (error) {
-      console.error('Failed to get allowed actions:', error);
-      return [];
-    }
-  }
-
-  /** Fetch all domain groups (includes their features/permissions). */
-  async getGroups(): Promise<Group[]> {
-    const sdk = await getOrInitializeSDK();
-    return sdk.auth.getGroups();
-  }
-
-  /** Fetch all permissions defined in the current domain. */
-  async getDomainPermissions(): Promise<Feature[]> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      return await sdk.auth.getPermissions();
-    } catch (error) {
-      console.error('Failed to get domain permissions:', error);
-      return [];
-    }
-  }
-
-  /** Create a new group with optional initial permissions. */
-  async createGroup(name: string, features: Feature[] = []): Promise<Group> {
-    const sdk = await getOrInitializeSDK();
-    return sdk.auth.createGroup(name, features);
-  }
-
-  /** Assign a user to a group. */
-  async addUserToGroup(userId: string, groupId: string): Promise<void> {
-    const sdk = await getOrInitializeSDK();
-    await sdk.auth.addUserToGroup(userId, groupId);
-  }
-
-  /**
-   * Add permissions to an existing group.
-   * Valid scopes: 'self' | 'domain' | 'nil'
-   */
-  async addPermissionsToGroup(groupId: string, permissions: Feature[]): Promise<void> {
-    const sdk = await getOrInitializeSDK();
-    await sdk.auth.addPermissionsToGroup(groupId, permissions);
-  }
-
-  /** Get all groups the current user belongs to. */
-  async getCurrentUserGroups(): Promise<Group[]> {
-    const sdk = await getOrInitializeSDK();
-    const user = await sdk.auth.getCurrentUser();
-    const groupIds = user.group_ids ?? [];
-    if (groupIds.length === 0) return [];
-    const all = await sdk.auth.getGroups();
-    return all.filter(g => g.id && groupIds.includes(RecordIDToString(g.id)));
-  }
-}
-
-export const authorizationService = new AuthorizationService();
-```
-
----
-
-### Template 2: Permission Guard
-
-**File:** `src/guards/permission.guard.ts`
-
-**Purpose:** Protect routes and UI blocks based on permissions
-
-**Code:**
-
-```typescript
-// filepath: src/guards/permission.guard.ts
-import { authorizationService } from '../services/authorization.service';
-
-export interface PermissionGuardOptions {
-  feature: string;
-  action: string;
-  scope: string;
-  redirectTo?: string;
-}
-
-/**
- * Returns true if the user has the required permission.
- * Optionally redirects if not allowed.
- */
-export async function requirePermission(options: PermissionGuardOptions): Promise<boolean> {
-  const { feature, action, scope, redirectTo } = options;
-
-  const allowed = await authorizationService.canAccess(feature, action, scope);
-
-  if (!allowed && redirectTo) {
-    window.location.href = redirectTo;
-  }
-
-  return allowed;
-}
-
-/**
- * Gate a block of code behind a permission check.
- * Returns the result of `fn` if allowed, or `fallback` if not.
- */
-export async function withPermission<T>(
-  options: PermissionGuardOptions,
-  fn: () => Promise<T> | T,
-  fallback?: T
-): Promise<T | undefined> {
-  const allowed = await authorizationService.canAccess(
-    options.feature,
-    options.action,
-    options.scope
-  );
-  if (!allowed) return fallback;
-  return fn();
-}
-```
-
-**Usage:**
-
-```typescript
-import { requirePermission, withPermission } from './guards/permission.guard';
-
-// Redirect if not allowed
-await requirePermission({
-  feature: 'collections',
-  action: 'read-write',
-  scope: 'domain',
-  redirectTo: '/unauthorized'
-});
-
-// Gate a data fetch
-const data = await withPermission(
-  { feature: 'flows', action: 'read', scope: 'domain' },
-  () => sdk.flow.getFlows(),
-  []
-);
-```
-
----
-
-### Template 3: Group Management Service
-
-**File:** `src/services/group-management.service.ts`
-
-**Purpose:** Admin service for creating and managing groups with permissions
-
-**Code:**
-
-```typescript
-// filepath: src/services/group-management.service.ts
-import { getOrInitializeSDK } from './sdk.service';
-import type { Feature, Group } from '@machhub-dev/sdk-ts';
-
-class GroupManagementService {
-  /**
-   * Create a new group.
-   * @param name     - Display name (cannot be "Superuser")
-   * @param features - Initial permissions (can be empty, add later via addPermissions)
-   */
-  async createGroup(name: string, features: Feature[] = []): Promise<Group> {
-    const sdk = await getOrInitializeSDK();
-    return sdk.auth.createGroup(name, features);
-  }
-
-  /** Fetch all groups in the current domain (includes user_ids and features). */
-  async getGroups(): Promise<Group[]> {
-    const sdk = await getOrInitializeSDK();
-    return sdk.auth.getGroups();
-  }
-
-  /**
-   * Get all permissions defined across the current domain.
-   * Returns Feature[] — each entry has { name, action, scope }.
-   */
-  async getDomainPermissions(): Promise<Feature[]> {
-    const sdk = await getOrInitializeSDK();
-    return sdk.auth.getPermissions();
-  }
-
-  /**
-   * Append permissions to a group.
-   * Valid scopes: 'self' | 'domain' | 'nil'
-   *
-   * @example
-   * await groupService.addPermissions(groupId, [
-   *   { name: 'collections', action: 'read-write', scope: 'domain' },
-   *   { name: 'api_keys',    action: 'read-write', scope: 'self'   },
-   * ]);
-   */
-  async addPermissions(groupId: string, permissions: Feature[]): Promise<void> {
-    const sdk = await getOrInitializeSDK();
-    await sdk.auth.addPermissionsToGroup(groupId, permissions);
-  }
-
-  /** Assign a user to a group. */
-  async addUser(userId: string, groupId: string): Promise<void> {
-    const sdk = await getOrInitializeSDK();
-    await sdk.auth.addUserToGroup(userId, groupId);
-  }
-}
-
-export const groupManagementService = new GroupManagementService();
-```
-
----
-
-## MACHHUB Built-in Feature Names
-
-Use these values for the `name` field in `Feature`:
-
-| Feature name             | Description                          |
-|--------------------------|--------------------------------------|
-| `applications`           | Manage applications                  |
-| `users`                  | Manage user accounts                 |
-| `groups`                 | Manage groups and permissions        |
-| `api_keys`               | Manage API keys                      |
-| `upstreams`              | Manage upstream connections          |
-| `collections`            | Manage data collections              |
-| `flows`                  | Node-RED flow management             |
-| `historian`              | Time-series historian data           |
-| `processes`              | Manage processes                     |
-| `general_settings`       | General system settings              |
-| `gateway`                | Gateway configuration                |
-| `logs`                   | Access system logs                   |
-| `dashboard`              | Dashboard access                     |
-| `integration`            | Integration management               |
-| `manage_namespace`       | Manage namespaces                    |
-| `license`                | License management                   |
-
-You can also use custom feature names for your application-specific permissions.
-
----
-
-## Authorization Checklist
-
-- [ ] `checkPermission` called before sensitive mutations
-- [ ] `checkAction` used to show/hide UI controls dynamically
-- [ ] `getPermissions` used when displaying the domain's full permission set
-- [ ] `addPermissionsToGroup` uses valid scopes: `self`, `domain`, or `nil`
-- [ ] `createGroup` avoids the reserved name `"Superuser"`
-- [ ] User management operations gated behind appropriate permissions
-- [ ] Permission checks on route entry, not just on data fetch
-
----
-
-## Related Skills
-
-- `machhub-sdk-authentication` — Login, logout, JWT, current user
-- `machhub-sdk-initialization` — SDK setup (required first)
-- `machhub-sdk-architecture` — Service pattern for organizing SDK calls
+Hide or disable controls with `can(...)`, and still handle a 403 from the server gracefully.

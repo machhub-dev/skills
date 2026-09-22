@@ -1,700 +1,265 @@
 ---
 name: machhub-angular
-description: Complete guide for integrating MACHHUB SDK with Angular applications, including services, dependency injection, RxJS patterns, and lifecycle hooks.
+description: Build an Angular app on MACHHUB — a client-only SPA that talks to MACHHUB through the SDK with zero-config `Initialize()`. Covers initializing the SDK before bootstrap, an auth service and functional route guard, signal-based collection and tag services, and building for upload. Use for any Angular frontend that reads or writes MACHHUB data.
 license: MPL-2.0
 metadata:
-  related_skills: "machhub-sdk-initialization, machhub-sdk-architecture, machhub-sdk-collections, machhub-sdk-realtime"
+  related_skills: "machhub-sdk-initialization, machhub-sdk-authentication, machhub-sdk-collections, machhub-sdk-realtime"
 ---
 
-## Overview
+## Read this first
 
-This skill covers **MACHHUB SDK integration with Angular**, including services, dependency injection, RxJS observables, and Angular-specific patterns.
+A MACHHUB Angular app is **a static SPA that runs in the browser**. MACHHUB hosts it, serves the SDK its config, and proxies every SDK call. The app has no server of its own.
 
-**Use this skill when:**
-- Building Angular applications with MACHHUB
-- Setting up MACHHUB SDK in Angular projects
-- Implementing reactive patterns with RxJS
-- Using Angular services and dependency injection
-- Working with Angular lifecycle hooks
+| ❌ Don't | ✅ Do instead |
+|---|---|
+| Angular SSR (`@angular/ssr`), an Express `server.ts`, or any Node backend | A plain browser build. MACHHUB writes its own `server.js` for SPA uploads |
+| MACHHUB URLs, app IDs, or developer keys in `environment.ts` | `sdk.Initialize()` with **no arguments** |
+| `HttpClient` calls to MACHHUB REST paths | SDK methods (`sdk.collection(...)`, `sdk.auth`, `sdk.tag`) |
+| Your own login, cookies, or JWT interceptor | `sdk.auth.login()`. The SDK stores the token and sends it |
+| Rebuilding record IDs (`` `myapp.orders:${id}` ``) | Pass `record.id` back as returned (see `machhub-sdk-collections`) |
 
-**Prerequisites:**
-- Angular CLI installed: `npm install -g @angular/cli`
-- MACHHUB SDK installed: `npm install @machhub-dev/sdk-ts`
-- **MACHHUB Designer Extension (VSCode)** - Zero-config initialization (RECOMMENDED)
-- Understanding of `machhub-sdk-initialization` for manual config (production)
+Anything that seems to need a server (secrets, schedules, third-party APIs) becomes a **MACHHUB Process** (`machhub-sdk-processes`).
 
-**Related Skills:****
-- `machhub-sdk-initialization` - Core SDK setup
-- `machhub-sdk-architecture` - Service patterns
-- `machhub-sdk-collections` - CRUD operations
-- `machhub-sdk-realtime` - Real-time subscriptions
+Zero-config works everywhere. `ng serve` has no `/_cfg`, so the SDK uses the Designer extension on `localhost:61888`. Once deployed, MACHHUB serves `/_cfg`. See `machhub-sdk-initialization`.
 
 ---
 
-## Installation
+## Setup
 
 ```bash
-# Create Angular app
-ng new my-machhub-app
-cd my-machhub-app
-
-# Install MACHHUB SDK
+ng new my-app --ssr=false --routing --style=css
+cd my-app
 npm install @machhub-dev/sdk-ts
-
-# Install RxJS (if not already included)
-npm install rxjs
 ```
 
----
+In `angular.json`, make the build land directly in `build/`, because the Designer extension uploads that folder by default:
 
-## Initialization Method Priority
+```jsonc
+"architect": {
+  "build": {
+    "options": {
+      "outputPath": { "base": "build", "browser": "" }
+    }
+  }
+}
+```
 
-**⭐ RECOMMENDED: Zero-Configuration with Designer Extension**
-
-For development in VSCode, use the **MACHHUB Designer Extension** for automatic zero-config initialization:
-
-1. Install MACHHUB Designer Extension in VSCode
-2. Use templates from `machhub-angular/templates/sdk.service.ts` (zero-config)
-3. SDK auto-configures - no manual setup needed!
-
-**For Production: Manual Configuration**
-
-When deploying to production, use manual configuration:
-- See templates: `machhub-angular/templates/sdk.service.manual.ts`
-- Configure environment variables
-- See `machhub-sdk-initialization` for details
+In `src/index.html`, set `<base href="./">` so assets resolve under both port and path hosting.
 
 ---
 
-## SDK Service (Angular Injectable)
+## SDK service
 
-```typescript
-// src/app/services/sdk.service.ts
+```ts
+// src/app/machhub/sdk.service.ts
 import { Injectable } from '@angular/core';
-import { SDK, type SDKConfig } from '@machhub-dev/sdk-ts';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { SDK } from '@machhub-dev/sdk-ts';
 
-@Injectable({
-  providedIn: 'root' // Singleton service
-})
-export class SdkService {
-  private sdk: SDK | null = null;
-  private isInitialized = false;
-  private initPromise: Promise<boolean> | null = null;
+@Injectable({ providedIn: 'root' })
+export class MachhubSdk {
+  readonly sdk = new SDK();
 
-  // Observable for initialization state
-  private initializedSubject = new BehaviorSubject<boolean>(false);
-  public initialized$ = this.initializedSubject.asObservable();
-
-  constructor() {
-    this.sdk = new SDK();
-  }
-
-  /**
-   * Initialize SDK with configuration
-   */
-  async initialize(config?: SDKConfig): Promise<boolean> {
-    if (this.isInitialized) {
-      return true;
+  /** Runs once before the app renders (see app.config.ts). */
+  async init(): Promise<void> {
+    if (!(await this.sdk.Initialize())) { // no arguments: zero-config
+      throw new Error('MACHHUB SDK failed to initialize. Is the Designer extension connected?');
     }
-
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-
-    this.initPromise = (async () => {
-      try {
-        if (!this.sdk) {
-          this.sdk = new SDK();
-        }
-
-        const success = await this.sdk.Initialize(config);
-        this.isInitialized = success;
-        this.initializedSubject.next(success);
-
-        if (success) {
-          console.log('MACHHUB SDK initialized successfully');
-        }
-
-        return success;
-      } catch (error) {
-        console.error('Error initializing SDK:', error);
-        this.isInitialized = false;
-        this.initializedSubject.next(false);
-        return false;
-      } finally {
-        this.initPromise = null;
-      }
-    })();
-
-    return this.initPromise;
-  }
-
-  /**
-   * Get SDK instance
-   */
-  getSDK(): SDK {
-    if (!this.isInitialized || !this.sdk) {
-      throw new Error('SDK not initialized. Call initialize() first.');
-    }
-    return this.sdk;
-  }
-
-  /**
-   * Get or initialize SDK
-   */
-  async getOrInitializeSDK(config?: SDKConfig): Promise<SDK> {
-    if (!this.isInitialized) {
-      await this.initialize(config);
-    }
-    return this.getSDK();
   }
 }
 ```
 
----
-
-## App Initialization (APP_INITIALIZER)
-
-```typescript
-// src/app/app.config.ts (Angular 17+ standalone)
-import { ApplicationConfig, APP_INITIALIZER } from '@angular/core';
-import { provideRouter } from '@angular/router';
+```ts
+// src/app/app.config.ts
+import { ApplicationConfig, inject, provideAppInitializer } from '@angular/core';
+import { provideRouter, withHashLocation } from '@angular/router';
 import { routes } from './app.routes';
-import { SdkService } from './services/sdk.service';
-import { environment } from '../environments/environment';
-
-function initializeApp(sdkService: SdkService) {
-  return () => sdkService.initialize({
-    application_id: environment.machhubAppId,
-    httpUrl: environment.machhubHttpUrl,
-    mqttUrl: environment.machhubMqttUrl
-  });
-}
+import { MachhubSdk } from './machhub/sdk.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideRouter(routes),
-    {
-      provide: APP_INITIALIZER,
-      useFactory: initializeApp,
-      deps: [SdkService],
-      multi: true
-    }
+    provideRouter(routes, withHashLocation()), // works unchanged under port and path hosting
+    provideAppInitializer(() => inject(MachhubSdk).init())
   ]
 };
 ```
 
-### For NgModule-based Apps
-
-```typescript
-// src/app/app.module.ts
-import { NgModule, APP_INITIALIZER } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
-import { AppComponent } from './app.component';
-import { SdkService } from './services/sdk.service';
-import { environment } from '../environments/environment';
-
-export function initializeApp(sdkService: SdkService) {
-  return () => sdkService.initialize({
-    application_id: environment.machhubAppId,
-    httpUrl: environment.machhubHttpUrl
-  });
-}
-
-@NgModule({
-  declarations: [AppComponent],
-  imports: [BrowserModule],
-  providers: [
-    {
-      provide: APP_INITIALIZER,
-      useFactory: initializeApp,
-      deps: [SdkService],
-      multi: true
-    }
-  ],
-  bootstrap: [AppComponent]
-})
-export class AppModule {}
-```
+Because the initializer finishes before any component is created, services can use `inject(MachhubSdk).sdk` synchronously. (On Angular versions before 19, use an `APP_INITIALIZER` provider with a factory that returns `() => sdk.init()`.)
 
 ---
 
-## Environment Configuration
+## Auth
 
-```typescript
-// src/environments/environment.ts
-export const environment = {
-  production: false,
-  machhubAppId: 'your-app-id',
-  machhubHttpUrl: 'http://localhost:80',
-  machhubMqttUrl: 'mqtt://localhost:1883'
-};
+```ts
+// src/app/machhub/auth.service.ts
+import { Injectable, inject, signal } from '@angular/core';
+import type { User } from '@machhub-dev/sdk-ts';
+import { MachhubSdk } from './sdk.service';
 
-// src/environments/environment.prod.ts
-export const environment = {
-  production: true,
-  machhubAppId: 'your-production-app-id',
-  machhubHttpUrl: 'https://api.machhub.io',
-  machhubMqttUrl: 'mqtts://mqtt.machhub.io'
-};
-```
+@Injectable({ providedIn: 'root' })
+export class AuthService {
+  private sdk = inject(MachhubSdk).sdk;
+  readonly user = signal<User | null>(null);
+  private restored: Promise<User | null> | null = null;
 
----
-
-## Domain Service with RxJS
-
-```typescript
-// src/app/services/product.service.ts
-import { Injectable } from '@angular/core';
-import { Observable, from, BehaviorSubject, map, catchError, of } from 'rxjs';
-import { SdkService } from './sdk.service';
-import { RecordIDToString, StringToRecordID } from '@machhub-dev/sdk-ts';
-
-export interface Product {
-  id: string;
-  name: string;
-  price: number;
-  description?: string;
-  categoryId?: string;
-}
-
-@Injectable({
-  providedIn: 'root'
-})
-export class ProductService {
-  private collectionName = 'products';
-  private productsSubject = new BehaviorSubject<Product[]>([]);
-  public products$ = this.productsSubject.asObservable();
-
-  constructor(private sdkService: SdkService) {}
-
-  /**
-   * Get all products as Observable
-   */
-  getAllProducts(): Observable<Product[]> {
-    return from(
-      this.sdkService.getSDK()
-        .collection(this.collectionName)
-        .getAll()
-    ).pipe(
-      map(products => products.map(this.transformProduct)),
-      catchError(error => {
-        console.error('Error fetching products:', error);
-        return of([]);
-      })
-    );
+  /** Restore the session once. validateCurrentUser throws when there is no token. */
+  restore(): Promise<User | null> {
+    this.restored ??= (async () => {
+      try {
+        const { valid } = await this.sdk.auth.validateCurrentUser();
+        this.user.set(valid ? await this.sdk.auth.getCurrentUser() : null);
+      } catch {
+        this.user.set(null);
+      }
+      return this.user();
+    })();
+    return this.restored;
   }
 
-  /**
-   * Get product by ID as Observable
-   */
-  getProductById(id: string): Observable<Product | null> {
-    return from(
-      this.sdkService.getSDK()
-        .collection(this.collectionName)
-        .getOne(`myapp.${this.collectionName}:${id}`)
-    ).pipe(
-      map(product => product ? this.transformProduct(product) : null),
-      catchError(error => {
-        console.error('Error fetching product:', error);
-        return of(null);
-      })
-    );
+  async login(username: string, password: string) {
+    await this.sdk.auth.login(username, password); // throws "Login failed: ..." on bad credentials
+    this.user.set(await this.sdk.auth.getCurrentUser());
+    this.restored = Promise.resolve(this.user());
   }
 
-  /**
-   * Create product
-   */
-  createProduct(product: Omit<Product, 'id'>): Observable<Product> {
-    return from(
-      this.sdkService.getSDK()
-        .collection(this.collectionName)
-        .create(product)
-    ).pipe(
-      map(created => this.transformProduct(created)),
-      catchError(error => {
-        console.error('Error creating product:', error);
-        throw error;
-      })
-    );
-  }
-
-  /**
-   * Update product
-   */
-  updateProduct(id: string, updates: Partial<Product>): Observable<Product> {
-    return from(
-      this.sdkService.getSDK()
-        .collection(this.collectionName)
-        .update(`myapp.${this.collectionName}:${id}`, updates)
-    ).pipe(
-      map(updated => this.transformProduct(updated)),
-      catchError(error => {
-        console.error('Error updating product:', error);
-        throw error;
-      })
-    );
-  }
-
-  /**
-   * Delete product
-   */
-  deleteProduct(id: string): Observable<boolean> {
-    return from(
-      this.sdkService.getSDK()
-        .collection(this.collectionName)
-        .delete(`myapp.${this.collectionName}:${id}`)
-    ).pipe(
-      map(() => true),
-      catchError(error => {
-        console.error('Error deleting product:', error);
-        return of(false);
-      })
-    );
-  }
-
-  /**
-   * Load and cache products
-   */
-  async loadProducts(): Promise<void> {
-    try {
-      const products = await this.sdkService.getSDK()
-        .collection(this.collectionName)
-        .getAll();
-      
-      this.productsSubject.next(products.map(this.transformProduct));
-    } catch (error) {
-      console.error('Error loading products:', error);
-      this.productsSubject.next([]);
-    }
-  }
-
-  private transformProduct(raw: any): Product {
-    return {
-      id: this.extractId(raw.id),
-      name: raw.name,
-      price: raw.price,
-      description: raw.description,
-      categoryId: raw.categoryId ? this.extractId(raw.categoryId) : undefined
-    };
-  }
-
-  private extractId(value: any): string {
-    if (typeof value === 'object' && value?.ID) {
-      return value.ID;
-    }
-    if (typeof value === 'string' && value.includes(':')) {
-      return value.split(':')[1];
-    }
-    return value;
+  async logout() {
+    await this.sdk.auth.logout();
+    this.user.set(null);
+    this.restored = Promise.resolve(null);
   }
 }
 ```
 
----
-
-## Component Usage
-
-```typescript
-// src/app/components/product-list/product-list.component.ts
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { ProductService, Product } from '../../services/product.service';
-import { Subject, takeUntil } from 'rxjs';
-
-@Component({
-  selector: 'app-product-list',
-  standalone: true,
-  imports: [CommonModule],
-  templateUrl: './product-list.component.html',
-  styleUrls: ['./product-list.component.css']
-})
-export class ProductListComponent implements OnInit, OnDestroy {
-  products: Product[] = [];
-  loading = true;
-  error: string | null = null;
-  private destroy$ = new Subject<void>();
-
-  constructor(private productService: ProductService) {}
-
-  ngOnInit(): void {
-    // Subscribe to products observable
-    this.productService.products$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (products) => {
-          this.products = products;
-          this.loading = false;
-        },
-        error: (err) => {
-          this.error = 'Failed to load products';
-          this.loading = false;
-          console.error(err);
-        }
-      });
-
-    // Load products
-    this.productService.loadProducts();
-  }
-
-  ngOnDestroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
-  }
-
-  async deleteProduct(id: string): Promise<void> {
-    if (confirm('Are you sure?')) {
-      this.productService.deleteProduct(id)
-        .pipe(takeUntil(this.destroy$))
-        .subscribe({
-          next: (success) => {
-            if (success) {
-              this.productService.loadProducts(); // Reload
-            }
-          },
-          error: (err) => console.error('Delete failed:', err)
-        });
-    }
-  }
-}
-```
-
-```html
-<!-- src/app/components/product-list/product-list.component.html -->
-<div class="product-list">
-  <h2>Products</h2>
-
-  <div *ngIf="loading" class="loading">Loading...</div>
-  <div *ngIf="error" class="error">{{ error }}</div>
-
-  <div *ngIf="!loading && !error" class="products">
-    <div *ngFor="let product of products" class="product-card">
-      <h3>{{ product.name }}</h3>
-      <p class="price">{{ product.price | currency }}</p>
-      <p *ngIf="product.description">{{ product.description }}</p>
-      <button (click)="deleteProduct(product.id)" class="btn-delete">
-        Delete
-      </button>
-    </div>
-  </div>
-</div>
-```
-
----
-
-## Real-time Subscriptions with RxJS
-
-```typescript
-// src/app/services/sensor.service.ts
-import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { SdkService } from './sdk.service';
-
-export interface SensorData {
-  value: number;
-  timestamp: string;
-  quality: string;
-}
-
-@Injectable({
-  providedIn: 'root'
-})
-export class SensorService implements OnDestroy {
-  private sensorDataSubject = new BehaviorSubject<Map<string, SensorData>>(new Map());
-  public sensorData$ = this.sensorDataSubject.asObservable();
-  private activeSubscriptions: string[] = [];
-
-  constructor(private sdkService: SdkService) {}
-
-  /**
-   * Subscribe to sensor tags
-   */
-  async subscribeSensors(tags: string[]): Promise<void> {
-    const sdk = this.sdkService.getSDK();
-
-    for (const tag of tags) {
-      await sdk.tag.subscribe(tag, (data: SensorData, topic: string) => {
-        const currentData = this.sensorDataSubject.value;
-        currentData.set(topic, data);
-        this.sensorDataSubject.next(new Map(currentData));
-      });
-
-      this.activeSubscriptions.push(tag);
-    }
-  }
-
-  /**
-   * Get sensor data for specific tag
-   */
-  getSensorData(tag: string): Observable<SensorData | undefined> {
-    return new Observable(observer => {
-      const subscription = this.sensorData$.subscribe(dataMap => {
-        observer.next(dataMap.get(tag));
-      });
-      return () => subscription.unsubscribe();
-    });
-  }
-
-  /**
-   * Unsubscribe from all sensors
-   */
-  ngOnDestroy(): void {
-    if (this.activeSubscriptions.length > 0) {
-      const sdk = this.sdkService.getSDK();
-      sdk.tag.unsubscribe(this.activeSubscriptions);
-      this.activeSubscriptions = [];
-    }
-  }
-}
-```
-
----
-
-## Guards for Protected Routes
-
-```typescript
-// src/app/guards/auth.guard.ts
+```ts
+// src/app/machhub/auth.guard.ts
 import { inject } from '@angular/core';
-import { Router, CanActivateFn } from '@angular/router';
-import { SdkService } from '../services/sdk.service';
+import { CanActivateFn, Router } from '@angular/router';
+import { AuthService } from './auth.service';
 
-export const authGuard: CanActivateFn = async (route, state) => {
-  const sdkService = inject(SdkService);
-  const router = inject(Router);
-
-  try {
-    const sdk = sdkService.getSDK();
-    const { valid } = await sdk.auth.validateCurrentUser();
-
-    if (!valid) {
-      router.navigate(['/login']);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Auth guard error:', error);
-    router.navigate(['/login']);
-    return false;
-  }
+export const authGuard: CanActivateFn = async (_route, state) => {
+  const user = await inject(AuthService).restore();
+  return user ? true : inject(Router).createUrlTree(['/login'], { queryParams: { redirectTo: state.url } });
 };
+```
 
-// Usage in routes
+```ts
 // src/app/app.routes.ts
 import { Routes } from '@angular/router';
-import { authGuard } from './guards/auth.guard';
+import { authGuard } from './machhub/auth.guard';
 
 export const routes: Routes = [
-  { path: 'login', component: LoginComponent },
-  {
-    path: 'dashboard',
-    component: DashboardComponent,
-    canActivate: [authGuard]
-  },
-  { path: '**', redirectTo: '/login' }
+  { path: 'login', loadComponent: () => import('./login.component').then((m) => m.LoginComponent) },
+  { path: '', canActivate: [authGuard], loadComponent: () => import('./orders.component').then((m) => m.OrdersComponent) }
 ];
 ```
 
+Permissions use `sdk.auth.checkAction(feature, scope)` (see `machhub-sdk-authorization`). There is no `hasPermission`.
+
 ---
 
-## Signals (Angular 16+)
+## Collections
 
-```typescript
-// src/app/services/product-signals.service.ts
-import { Injectable, signal, computed } from '@angular/core';
-import { SdkService } from './sdk.service';
+```ts
+// src/app/data/orders.service.ts
+import { Injectable, inject, signal } from '@angular/core';
+import type { RecordID } from '@machhub-dev/sdk-ts';
+import { MachhubSdk } from '../machhub/sdk.service';
 
-@Injectable({
-  providedIn: 'root'
-})
-export class ProductSignalsService {
-  private collectionName = 'products';
-  
-  // Signals
-  products = signal<Product[]>([]);
-  loading = signal<boolean>(false);
-  error = signal<string | null>(null);
+export interface Order { id: RecordID; number: string; status: 'open' | 'closed'; qty: number }
 
-  // Computed signals
-  productCount = computed(() => this.products().length);
-  hasProducts = computed(() => this.products().length > 0);
+@Injectable({ providedIn: 'root' })
+export class OrdersService {
+  private sdk = inject(MachhubSdk).sdk;
+  readonly orders = signal<Order[]>([]);
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
 
-  constructor(private sdkService: SdkService) {}
-
-  async loadProducts(): Promise<void> {
+  async load() {
     this.loading.set(true);
-    this.error.set(null);
-
     try {
-      const sdk = this.sdkService.getSDK();
-      const data = await sdk.collection(this.collectionName).getAll();
-      this.products.set(data);
-    } catch (err: any) {
-      this.error.set(err.message || 'Failed to load products');
+      // a fresh builder per query
+      this.orders.set(await this.sdk.collection('orders').filter('status', '=', 'open').sort('created_dt', 'desc').getAll());
+      this.error.set(null);
+    } catch (err) {
+      this.error.set((err as Error).message);
     } finally {
       this.loading.set(false);
     }
   }
-}
 
-// Component using signals
+  async create(data: Omit<Order, 'id'>) {
+    await this.sdk.collection('orders').create(data);
+    await this.load();
+  }
+
+  async close(order: Order) {
+    await this.sdk.collection('orders').update(order.id, { status: 'closed' }); // pass the id as returned
+    await this.load();
+  }
+}
+```
+
+```ts
+// src/app/orders.component.ts
+import { Component, inject, OnInit } from '@angular/core';
+import { RecordIDToString } from '@machhub-dev/sdk-ts';
+import { OrdersService } from './data/orders.service';
+
 @Component({
-  selector: 'app-products',
-  standalone: true,
+  selector: 'app-orders',
   template: `
-    <div>
-      <h2>Products ({{ productService.productCount() }})</h2>
-      @if (productService.loading()) {
-        <p>Loading...</p>
-      }
-      @if (productService.error()) {
-        <p class="error">{{ productService.error() }}</p>
-      }
-      @for (product of productService.products(); track product.id) {
-        <div>{{ product.name }}</div>
-      }
-    </div>
+    @if (svc.error(); as e) { <p role="alert">{{ e }}</p> }
+    @for (o of svc.orders(); track key(o)) {
+      <div>{{ o.number }} · {{ o.qty }} <button (click)="svc.close(o)">Close</button></div>
+    } @empty { <p>No open orders</p> }
   `
 })
-export class ProductsComponent {
-  constructor(public productService: ProductSignalsService) {
-    this.productService.loadProducts();
-  }
+export class OrdersComponent implements OnInit {
+  svc = inject(OrdersService);
+  key = (o: { id: Parameters<typeof RecordIDToString>[0] }) => RecordIDToString(o.id);
+  ngOnInit() { this.svc.load(); }
 }
 ```
 
 ---
 
-## Best Practices
+## Live tags
 
-1. ✅ **Use APP_INITIALIZER** - Initialize SDK before app starts
-2. ✅ **Injectable services** - Leverage Angular DI system
-3. ✅ **RxJS Observables** - Convert Promises to Observables for reactive patterns
-4. ✅ **takeUntil pattern** - Unsubscribe from observables in ngOnDestroy
-5. ✅ **Route guards** - Protect routes with authentication
-6. ✅ **Environment variables** - Store config in environment files
-7. ✅ **Signals (Angular 16+)** - Use signals for reactive state
-8. ✅ **Standalone components** - Use standalone API for modern Angular
+Use the fan-out hub from `machhub-sdk-realtime` (put `watchTag` in `src/app/machhub/tags.ts`, with `getSDK` returning `inject(MachhubSdk).sdk`), and unsubscribe when the component is destroyed:
 
----
+```ts
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { watchTag } from './machhub/tags';
 
-## Angular Checklist
+@Component({ selector: 'app-temp', template: `<p>{{ value() ?? '—' }} °C</p>` })
+export class TempComponent {
+  value = signal<number | null>(null);
+  constructor() {
+    const destroyRef = inject(DestroyRef);
+    watchTag('PlantA/Line1/Temperature', (v) => this.value.set(v as number)).then((stop) => destroyRef.onDestroy(stop));
+  }
+}
+```
 
-- [ ] SDK service created with `@Injectable({ providedIn: 'root' })`
-- [ ] APP_INITIALIZER configured for SDK initialization
-- [ ] Environment variables set up
-- [ ] Domain services use RxJS observables
-- [ ] Components use `takeUntil` for subscription cleanup
-- [ ] Auth guard implemented for protected routes
-- [ ] Real-time subscriptions cleaned up in `ngOnDestroy`
-- [ ] Error handling implemented in services
-- [ ] TypeScript strict mode enabled
+The SDK's `tag.unsubscribe` takes one topic string, and a topic has only one SDK handler. That's why components go through the hub.
 
 ---
 
-## Resources
+## Build and deploy
 
-- **Angular Docs**: https://angular.dev
-- **RxJS Docs**: https://rxjs.dev
-- **MACHHUB SDK**: See `machhub-sdk-initialization`
+```bash
+ng build   # writes build/ with index.html at the top level
+```
+
+Upload `build/` with the Designer extension and set **Application Type = SPA** on the Applications page. Don't add a `server.js`.
+
+---
+
+## Checklist
+
+- [ ] `Initialize()` runs once, with no arguments, in `provideAppInitializer`
+- [ ] No SSR, `server.ts`, `HttpClient` calls to MACHHUB, or MACHHUB values in `environment.ts`
+- [ ] Login uses `sdk.auth`, and routes are guarded with `authGuard`
+- [ ] Record IDs are passed back as returned
+- [ ] Tag subscriptions go through the hub and stop on destroy
+- [ ] `outputPath` is `build`, with `<base href="./">` and hash routing
+- [ ] Uploaded as an **SPA**

@@ -282,18 +282,18 @@ See full example: [process.typescript.example.ts](./templates/process.typescript
 MACHHUB's TypeScript SDK (`@machhub-dev/sdk-ts`) is automatically initialized and injected as the global `sdk` into every TypeScript process. **No import or initialization is needed** — just use it directly.
 
 ```typescript
-// Read all records from a collection
-const records = await sdk.collection("myapp.readings").getAll();
+// Read all records from a collection. Use the SHORT collection name; the server adds the domain
+const records = await sdk.collection("readings").getAll();
 
 // Create a new record
-const record = await sdk.collection("myapp.events").create({
+const record = await sdk.collection("events").create({
   type: "alert",
   value: 95,
   timestamp: new Date().toISOString()
 });
 ```
 
-The SDK is domain-scoped to the domain the process belongs to — it can only access resources within that domain.
+The SDK is domain-scoped to the domain the process belongs to — it can only access resources within that domain. The collection, tag, historian, and bridge APIs work as in `machhub-sdk-collections`, `machhub-sdk-realtime`, and `machhub-sdk-advanced`. `sdk.auth.login` is not needed; the worker is already authenticated.
 
 > **Python:** The SDK is not available in Python processes. Use configured SQL Inputs/Outputs for data access.
 
@@ -399,7 +399,7 @@ config.tag: "sensors/+/temperature"
 `+` matches a single topic level; `#` matches all remaining levels (multi-level). The result is always a `Record<string, any>` / `dict` keyed by the matching topic string.
 
 ### SQL Input
-Runs a SurrealDB query (domain-scoped — can only access tables in your domain):
+Runs a SurrealQL query (domain-scoped — can only access tables in your domain). Unlike the SDK, raw SQL uses the **full table name** `<domainId>.<collection>`. In these examples `myapp` stands for your domain ID:
 ```
 name: "latestReading"
 type: "sql"
@@ -543,19 +543,18 @@ import type {
 
 ## Invoking a Process from the Frontend
 
-To call a process from your SvelteKit/frontend app, use the execute endpoint.
+From a MACHHUB app, **always** use the SDK. It runs as the logged-in user:
+
+```typescript
+const result = await sdk.processes.execute('calculateOEE', { line: 'Line1' });
+```
 
 See full service: [process-execute.service.ts](./templates/process-execute.service.ts)
 
-### Direct HTTP Call (HTTP-triggered process)
-```typescript
-// For processes with an HTTP trigger endpoint
-const response = await fetch(`${MACHHUB_URL}/process/my-endpoint`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ param1: 'value1' })
-});
-const result = await response.json();
+### HTTP trigger: for external callers only
+`POST /process/<endpoint>` requires an **API key** (`X-Machhub-Api-Key`) or a client secret. It exists for webhooks and other systems calling MACHHUB. Don't call it from a browser app: that would need an API key in the bundle, and without one the call fails with 401.
+```bash
+curl -X POST https://machhub.example.com/process/calculate-oee   -H "X-Machhub-Api-Key: $MACHHUB_API_KEY" -H "Content-Type: application/json"   -d '{"line":"Line1"}'
 ```
 
 ---

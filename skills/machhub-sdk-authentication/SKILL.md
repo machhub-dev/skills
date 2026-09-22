@@ -1,392 +1,100 @@
 ---
 name: machhub-sdk-authentication
-description: Authentication operations with MACHHUB SDK — login, logout, current user, and JWT validation.
+description: Log users in and out of a MACHHUB app with the SDK (`sdk.auth`) — login, logout, restoring a session on page load, the current user, JWT data, and password changes. Use whenever an app needs a login screen, a logged-in user, or a signed-out redirect.
 license: MPL-2.0
 metadata:
-  related_skills: "machhub-sdk-initialization, machhub-sdk-architecture, machhub-sdk-authorization"
+  related_skills: "machhub-sdk-initialization, machhub-sdk-authorization"
 ---
 
-## Overview
+## How MACHHUB auth works
 
-This skill covers **authentication** operations in the MACHHUB SDK, including login/logout, current user retrieval, and JWT validation.
+- `sdk.auth.login(username, password)` posts to MACHHUB and **stores the JWT itself**: in `localStorage` under `x-machhub-auth-tkn-<appId>` in the browser, and in memory in Node.
+- Every SDK request then carries `Authorization: Bearer <token>` automatically.
+- `sdk.auth.logout()` deletes the stored token. Nothing is sent to the server.
 
-**Use this skill when:**
-- Implementing user login and logout
-- Validating or inspecting JWT tokens
-- Retrieving the currently authenticated user
-- Checking session validity
-
-**For permissions, groups, and access control, see `machhub-sdk-authorization`.**
-
-**Prerequisites:**
-- SDK initialized using **Designer Extension (zero-config recommended)** - see `machhub-sdk-initialization`
-- For production: Manual configuration - see `machhub-sdk-initialization` templates
-
-**Related Skills:**
-- `machhub-sdk-initialization` - SDK must be initialized first
-- `machhub-sdk-authorization` - Permissions, groups, and access control
-- `machhub-sdk-architecture` - Use service pattern for auth operations
+So the app never handles the token, never sets cookies, and never needs a server. **Don't** build your own sessions, cookies, JWT parsing for auth decisions, or server-side guards (`middleware.ts`, `hooks.server.ts`, `+page.server.ts`, Express). The token lives in the browser, so login checks run in the browser.
 
 ---
 
-## Authentication Operations
+## API
 
-### Login & Logout
+| Call | Returns | Notes |
+|---|---|---|
+| `auth.login(username, password)` | `{ tkn }` | Throws `Error('Login failed: ...')` on bad credentials |
+| `auth.logout()` | `void` | Clears the stored token |
+| `auth.getCurrentUser()` | `User` | `GET /auth/me`. Throws if not logged in |
+| `auth.validateCurrentUser()` | `{ valid }` | **Throws** when no token is stored, so wrap it in try/catch |
+| `auth.validateJWT(token)` | `{ valid }` | Validate an arbitrary token |
+| `auth.getJWTData()` | decoded payload | Local decode only, not a validity check. Throws when no token is stored |
+| `auth.changePassword(oldPassword, newPassword)` | `{ ok, message }` | For the logged-in user |
 
-```typescript
-import { getOrInitializeSDK } from './sdk.service';
+`User` has `id` (a RecordID), `firstName`, `lastName`, `username`, `email`, `number`, `userImage`, `createdDt`, and `group_ids`.
 
-// Login
-const sdk = await getOrInitializeSDK();
-await sdk.auth.login('username', 'password');
+User and group administration (`getUsers`, `createUser`, `updateUser`, groups, permissions) is in `machhub-sdk-authorization`.
 
-// Logout
-await sdk.auth.logout();
-```
+---
 
-### Current User
+## Auth state
 
-```typescript
-// Get current authenticated user
-const currentUser = await sdk.auth.getCurrentUser();
-console.log(currentUser);
-// { id, username, email, firstName, lastName, ... }
+One small store is all an app needs. The shape is framework-agnostic; each framework skill wraps it idiomatically (React context, Svelte runes, Vue composable, Angular service).
 
-// Get JWT data
-const jwtData = await sdk.auth.getJWTData();
-console.log(jwtData);
-// { user_id, username, exp, ... }
-```
+```ts
+// src/lib/machhub/auth.ts
+import type { User } from '@machhub-dev/sdk-ts';
+import { getSDK } from './sdk'; // see machhub-sdk-initialization
 
-### JWT Validation
+let user: User | null = null;
+let restored = false;
 
-```typescript
-// Validate current user's JWT
-const { valid } = await sdk.auth.validateCurrentUser();
-if (!valid) {
-  // Redirect to login page
-  window.location.href = '/login';
+/** Call once on app load. Resolves to the logged-in user, or null. */
+export async function restoreSession(): Promise<User | null> {
+  if (restored) return user;
+  const sdk = await getSDK();
+  try {
+    const { valid } = await sdk.auth.validateCurrentUser(); // throws if no token
+    user = valid ? await sdk.auth.getCurrentUser() : null;
+  } catch {
+    user = null;
+  }
+  restored = true;
+  return user;
 }
 
-// Validate specific JWT token
-await sdk.auth.validateJWT(token);
-```
-
----
-
-## Auth Service Example
-
-```typescript
-// services/auth.service.ts
-import { getOrInitializeSDK } from './sdk.service';
-
-class AuthService {
-  async login(username: string, password: string): Promise<boolean> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      await sdk.auth.login(username, password);
-      return true;
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
-    }
-  }
-
-  async logout(): Promise<void> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      await sdk.auth.logout();
-    } catch (error) {
-      console.error('Logout failed:', error);
-      throw error;
-    }
-  }
-
-  async getCurrentUser() {
-    try {
-      const sdk = await getOrInitializeSDK();
-      return await sdk.auth.getCurrentUser();
-    } catch (error) {
-      console.error('Failed to get current user:', error);
-      throw error;
-    }
-  }
-
-  async validateSession(): Promise<boolean> {
-    try {
-      const sdk = await getOrInitializeSDK();
-      const result = await sdk.auth.validateCurrentUser();
-      return result.valid;
-    } catch (error) {
-      console.error('Session validation failed:', error);
-      return false;
-    }
-  }
-}
-
-export const authService = new AuthService();
-```
-
----
-
-## Error Handling
-
-```typescript
-try {
+export async function login(username: string, password: string): Promise<User> {
+  const sdk = await getSDK();
   await sdk.auth.login(username, password);
-} catch (error) {
-  if (error.message.includes('localStorage')) {
-    console.error('Browser environment required for authentication');
-  } else if (error.message.includes('credentials')) {
-    console.error('Invalid username or password');
-  } else {
-    console.error('Login failed:', error.message);
-  }
+  user = await sdk.auth.getCurrentUser();
+  restored = true;
+  return user;
 }
+
+export async function logout(): Promise<void> {
+  const sdk = await getSDK();
+  await sdk.auth.logout();
+  user = null;
+}
+
+export const currentUser = () => user;
 ```
+
+**Guarding pages:** before rendering a private page, `await restoreSession()`, and send the user to `/login` if it returns `null`. Do this in the client router: a React `<RequireAuth>`, a SvelteKit universal `+layout.ts` with `ssr = false`, a Nuxt client middleware, or an Angular `CanActivateFn`.
+
+**Expired tokens:** the SDK doesn't refresh tokens. When a call fails with 401, clear state with `logout()` and redirect to the login page.
 
 ---
 
-## Templates
+## Login form essentials
 
-### Template 1: Auth Service
-
-**File:** `src/services/auth.service.ts`
-
-**Purpose:** Authentication service — login, logout, current user, session validation
-
-**Code:**
-
-```typescript
-// filepath: src/services/auth.service.ts
-import { getOrInitializeSDK } from './sdk.service';
-import type { SDK } from '@machhub-dev/sdk-ts';
-
-export interface LoginCredentials {
-  username: string;
-  password: string;
-}
-
-class AuthService {
-  private sdk: SDK | null = null;
-  private currentUser: any = null;
-
-  private async getSDK(): Promise<SDK> {
-    if (!this.sdk) {
-      this.sdk = await getOrInitializeSDK();
-    }
-    return this.sdk;
-  }
-
-  /** Login user — stores JWT in localStorage (or in-memory for Node.js) */
-  async login(username: string, password: string): Promise<void> {
-    const sdk = await this.getSDK();
-    await sdk.auth.login(username, password);
-    this.currentUser = await sdk.auth.getCurrentUser();
-  }
-
-  /** Logout user — clears stored JWT */
-  async logout(): Promise<void> {
-    const sdk = await this.getSDK();
-    await sdk.auth.logout();
-    this.currentUser = null;
-  }
-
-  /** Get current authenticated user */
-  async getCurrentUser() {
-    if (this.currentUser) return this.currentUser;
-    const sdk = await this.getSDK();
-    this.currentUser = await sdk.auth.getCurrentUser();
-    return this.currentUser;
-  }
-
-  /** Validate current session. Returns false if JWT is expired or missing. */
-  async validateSession(): Promise<boolean> {
-    try {
-      const sdk = await this.getSDK();
-      const { valid } = await sdk.auth.validateCurrentUser();
-      return valid;
-    } catch {
-      return false;
-    }
-  }
-
-  /** Get decoded JWT payload */
-  async getJWTData(): Promise<any> {
-    const sdk = await this.getSDK();
-    return sdk.auth.getJWTData();
-  }
-}
-
-export const authService = new AuthService();
-```
+- Use `autocomplete="username"` and `autocomplete="current-password"` so password managers work.
+- Show the error message from the thrown `Error`, and keep the typed username.
+- After login, go back to the page the user originally asked for (pass it as `?redirectTo=`).
 
 ---
 
-### Template 2: Auth Context (React/Framework Agnostic)
+## Checklist
 
-**File:** `src/contexts/auth.context.ts`
-
-**Purpose:** Authentication state management
-
-**Code:**
-
-```typescript
-// filepath: src/contexts/auth.context.ts
-import { authService, type User } from '../services/auth.service';
-
-export interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-}
-
-export class AuthContext {
-  private state: AuthState = {
-    user: null,
-    isAuthenticated: false,
-    isLoading: true
-  };
-
-  private listeners: Array<(state: AuthState) => void> = [];
-
-  /**
-   * Initialize auth context
-   */
-  async initialize(): Promise<void> {
-    this.setState({ isLoading: true });
-    
-    try {
-      const user = await authService.getCurrentUser();
-      this.setState({
-        user,
-        isAuthenticated: user !== null,
-        isLoading: false
-      });
-    } catch (error) {
-      console.error('Auth initialization failed:', error);
-      this.setState({
-        user: null,
-        isAuthenticated: false,
-        isLoading: false
-      });
-    }
-  }
-
-  /**
-   * Login
-   */
-  async login(username: string, password: string): Promise<void> {
-    try {
-      const user = await authService.login(username, password);
-      this.setState({
-        user,
-        isAuthenticated: true,
-        isLoading: false
-      });
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
-   * Logout
-   */
-  async logout(): Promise<void> {
-    try {
-      await authService.logout();
-      this.setState({
-        user: null,
-        isAuthenticated: false,
-        isLoading: false
-      });
-    } catch (error) {
-      console.error('Logout failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get current state
-   */
-  getState(): AuthState {
-    return { ...this.state };
-  }
-
-  /**
-   * Subscribe to state changes
-   */
-  subscribe(listener: (state: AuthState) => void): () => void {
-    this.listeners.push(listener);
-    
-    // Return unsubscribe function
-    return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
-    };
-  }
-
-  /**
-   * Set state and notify listeners
-   */
-  private setState(updates: Partial<AuthState>): void {
-    this.state = { ...this.state, ...updates };
-    this.notifyListeners();
-  }
-
-  /**
-   * Notify all listeners
-   */
-  private notifyListeners(): void {
-    for (const listener of this.listeners) {
-      listener(this.state);
-    }
-  }
-}
-
-export const authContext = new AuthContext();
-```
-
-**Usage:**
-
-```typescript
-import { authContext } from './contexts/auth.context';
-
-// Initialize on app load
-await authContext.initialize();
-
-// Subscribe to changes
-const unsubscribe = authContext.subscribe((state) => {
-  console.log('Auth state changed:', state);
-});
-
-// Login
-await authContext.login('user@example.com', 'password');
-
-// Get current state
-const { user, isAuthenticated } = authContext.getState();
-
-// Logout
-await authContext.logout();
-
-// Cleanup
-unsubscribe();
-```
-
----
-
-## Auth Checklist
-
-- [ ] **Login/logout** implemented
-- [ ] **Session validation** checked on app load
-- [ ] **Current user** fetched and stored in state
-- [ ] **Error handling** for auth failures
-- [ ] **Token refresh** handled (if applicable)
-- [ ] **Logout cleanup** clears user state
-
----
-
-## Resources
-
-- **MACHHUB SDK Docs**: https://docs.machhub.dev
-- **Initialization Guide**: See `machhub-sdk-initialization`
-- **Permission & Group Management**: See `machhub-sdk-authorization`
+- [ ] Login uses `sdk.auth.login`, with no custom session or cookie code
+- [ ] The session is restored on load with `validateCurrentUser` inside try/catch
+- [ ] Private pages are guarded in the client router
+- [ ] A 401 leads to logout and the login page
+- [ ] No token is ever read, stored, or sent by the app itself

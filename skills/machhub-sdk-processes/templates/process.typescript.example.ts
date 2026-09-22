@@ -19,7 +19,7 @@
  * SDK (TypeScript only):
  *   The MACHHUB SDK is auto-injected as the global `sdk`.
  *   No import or initialization needed.
- *   Example: await sdk.collection("myapp.data").getAll()
+ *   Example: await sdk.collection("data").getAll()
  *
  * Wildcard tag inputs:
  *   A tag input with a wildcard path (e.g. "sensors/+/temperature") resolves to
@@ -147,12 +147,12 @@ return {
 // Input:   none
 // Output:  none
 // ---------------------------------------------------------------------------
-const records = await sdk.collection('myapp.readings').getAll();
+const records = await sdk.collection('readings').getAll();
 console.log(`Fetched ${records.length} records`);
 
 const latest = records[records.length - 1];
 if (latest && latest.value > 90) {
-    await sdk.collection('myapp.alerts').create({
+    await sdk.collection('alerts').create({
         source: 'process',
         value: latest.value,
         timestamp: new Date().toISOString()

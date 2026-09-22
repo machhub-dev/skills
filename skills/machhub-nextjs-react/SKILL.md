@@ -1,655 +1,389 @@
 ---
 name: machhub-nextjs-react
-description: Complete guide for integrating MACHHUB SDK with Next.js and React applications, including App Router, Server Components, Client Components, and React hooks.
+description: Build a React app on MACHHUB — a client-only Vite SPA (or a Next.js static export) that talks to MACHHUB through the SDK with zero-config `Initialize()`. Covers the SDK provider, auth with `sdk.auth`, collection and realtime hooks, route guards, and building for upload. Use for any React or Next.js frontend that reads or writes MACHHUB data.
 license: MPL-2.0
 metadata:
-  related_skills: "machhub-sdk-initialization, machhub-sdk-architecture, machhub-sdk-collections, machhub-sdk-realtime"
+  related_skills: "machhub-sdk-initialization, machhub-sdk-authentication, machhub-sdk-collections, machhub-sdk-realtime"
 ---
 
-## Overview
+## Read this first
 
-This skill covers **MACHHUB SDK integration with Next.js and React**, including App Router, Server/Client Components, React hooks, and Next.js-specific patterns.
+A MACHHUB React app is **a static bundle that runs in the browser**. MACHHUB is the backend. It hosts the bundle, serves the SDK its config, and proxies every SDK call to the API. The app never has a server of its own.
 
-**Use this skill when:**
-- Building Next.js applications with MACHHUB
-- Using React with MACHHUB SDK
-- Implementing Server Components and Client Components
-- Working with Next.js App Router
-- Creating custom React hooks for MACHHUB
+**Never do any of these.** They are the mistakes that break MACHHUB apps:
 
-**Prerequisites:**
-- Next.js installed: `npx create-next-app@latest`
-- MACHHUB SDK installed: `npm install @machhub-dev/sdk-ts`
-- **MACHHUB Designer Extension (VSCode)** - Zero-config initialization (RECOMMENDED)
-- Understanding of `machhub-sdk-initialization` for manual config (production)
+| ❌ Don't | Why it breaks | ✅ Do instead |
+|---|---|---|
+| Write an Express/Fastify/Node server, `server.js`, or a backend folder | MACHHUB writes its own `server.js` into the upload and overwrites yours. That file serves `/_cfg` and the `/machhub` proxy the SDK depends on | Ship only the build output |
+| Add Next.js API routes (`app/api/*`, `pages/api/*`), Server Actions (`'use server'`), or `middleware.ts` | They need a Node server, and a static export has none. They also tempt you into calling MACHHUB with a developer key from the server | Call the SDK from client components |
+| `fetch()` MACHHUB REST URLs by hand (`/collections/...`, `/api/...`) | The URLs and auth headers are the SDK's job, and hand-written ones are wrong | `sdk.collection('x').getAll()` and friends |
+| Pass a config to `Initialize(...)`: app ID, `httpUrl`, `mqttUrl`, developer key, `.env` / `VITE_*` / `NEXT_PUBLIC_*` vars | Hardcoded URLs point at the wrong host once deployed, and a developer key in a bundle is public | `await sdk.Initialize()` with **no arguments** |
+| Build your own login: cookies, sessions, JWT parsing, password checks | The SDK already stores the MACHHUB JWT and sends it on every call | `sdk.auth.login(username, password)` |
+| Rebuild record IDs (`` `myapp.${table}:${id}` ``) | IDs belong to the server, and a rebuilt one silently misses the record | Pass `record.id` back exactly as the SDK returned it |
 
-**Related Skills:****
-- `machhub-sdk-initialization` - Core SDK setup
-- `machhub-sdk-architecture` - Service patterns
-- `machhub-sdk-collections` - CRUD operations
-- `machhub-sdk-realtime` - Real-time subscriptions
+If the user asks for something that seems to need a server, like a secret, a scheduled job, or a third-party API call, build it as a **MACHHUB Process** (see `machhub-sdk-processes`) and call it from the app with the SDK.
 
 ---
 
-## Installation
+## How zero-config works (so you trust it)
+
+`sdk.Initialize()` with no arguments fetches `/_cfg` from the page's own origin:
+
+- **Local dev** (`npm run dev`): nothing serves `/_cfg`, so the SDK falls back to the **MACHHUB Designer extension** runtime on `localhost:61888`. Keep the Designer extension connected in VS Code, and that is all the setup there is.
+- **Deployed on MACHHUB**: MACHHUB's generated `server.js` serves `/_cfg` (runtime ID, port or path hosting) and proxies `/machhub/*` to the API. The same bundle works on a port or behind a path like `/myapp` without any change.
+
+So one build works everywhere, with no environment files.
+
+---
+
+## Stack
+
+**Default: Vite + React + TypeScript, with React Router for pages.** Use Next.js only when the user asks for it, and then only as a static export (see [Next.js](#nextjs-only-if-asked)).
 
 ```bash
-# Create Next.js app
-npx create-next-app@latest my-machhub-app
-cd my-machhub-app
-
-# Install MACHHUB SDK
-npm install @machhub-dev/sdk-ts
+npm create vite@latest my-app -- --template react-ts
+cd my-app
+npm install @machhub-dev/sdk-ts react-router-dom
 ```
 
----
+`vite.config.ts` needs `base: './'` so assets load under both port and path hosting, and `outDir: 'build'` because that is the folder the Designer extension uploads by default:
 
-## Initialization Method Priority
+```ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
-**⭐ RECOMMENDED: Zero-Configuration with Designer Extension**
-
-For development in VSCode, use the **MACHHUB Designer Extension** for automatic zero-config initialization:
-
-1. Install MACHHUB Designer Extension in VSCode
-2. Use templates from `machhub-nextjs-react/templates/sdk-context.tsx` (zero-config)
-3. SDK auto-configures - no manual setup needed!
-
-**For Production: Manual Configuration**
-
-When deploying to production, use manual configuration:
-- See templates: `machhub-nextjs-react/templates/sdk-context.manual.tsx`
-- Configure NEXT_PUBLIC_* environment variables
-- See `machhub-sdk-initialization` for details
-
----
-
-## SDK Service (Client-Side)
-
-```typescript
-// lib/sdk.service.ts
-'use client'; // Client-side only
-
-import { SDK, type SDKConfig } from '@machhub-dev/sdk-ts';
-
-class SDKService {
-  private static instance: SDKService | null = null;
-  private sdk: SDK | null = null;
-  private isInitialized = false;
-  private initPromise: Promise<boolean> | null = null;
-
-  private constructor() {
-    this.sdk = new SDK();
-  }
-
-  public static getInstance(): SDKService {
-    if (!SDKService.instance) {
-      SDKService.instance = new SDKService();
-    }
-    return SDKService.instance;
-  }
-
-  public async initialize(config?: SDKConfig): Promise<boolean> {
-    if (this.isInitialized) {
-      return true;
-    }
-
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-
-    this.initPromise = (async () => {
-      try {
-        if (!this.sdk) {
-          this.sdk = new SDK();
-        }
-
-        const success = await this.sdk.Initialize(config);
-        this.isInitialized = success;
-
-        if (success) {
-          console.log('MACHHUB SDK initialized');
-        }
-
-        return success;
-      } catch (error) {
-        console.error('SDK initialization error:', error);
-        this.isInitialized = false;
-        return false;
-      } finally {
-        this.initPromise = null;
-      }
-    })();
-
-    return this.initPromise;
-  }
-
-  public getSDK(): SDK {
-    if (!this.isInitialized || !this.sdk) {
-      throw new Error('SDK not initialized');
-    }
-    return this.sdk;
-  }
-
-  public async getOrInitializeSDK(config?: SDKConfig): Promise<SDK> {
-    if (!this.isInitialized) {
-      await this.initialize(config);
-    }
-    return this.getSDK();
-  }
-
-  public get initialized(): boolean {
-    return this.isInitialized;
-  }
-}
-
-export const sdkService = SDKService.getInstance();
-
-export async function getOrInitializeSDK(config?: SDKConfig): Promise<SDK> {
-  return sdkService.getOrInitializeSDK(config);
-}
-```
-
----
-
-## Environment Variables
-
-```bash
-# .env.local
-NEXT_PUBLIC_MACHHUB_APP_ID=your-app-id
-NEXT_PUBLIC_MACHHUB_HTTP_URL=http://localhost:80
-NEXT_PUBLIC_MACHHUB_MQTT_URL=mqtt://localhost:1883
-```
-
-```typescript
-// lib/config.ts
-export const machhubConfig = {
-  application_id: process.env.NEXT_PUBLIC_MACHHUB_APP_ID!,
-  httpUrl: process.env.NEXT_PUBLIC_MACHHUB_HTTP_URL,
-  mqttUrl: process.env.NEXT_PUBLIC_MACHHUB_MQTT_URL
-};
-```
-
----
-
-## SDK Provider (Context)
-
-```typescript
-// components/providers/sdk-provider.tsx
-'use client';
-
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { SDK } from '@machhub-dev/sdk-ts';
-import { sdkService } from '@/lib/sdk.service';
-import { machhubConfig } from '@/lib/config';
-
-interface SDKContextType {
-  sdk: SDK | null;
-  isInitialized: boolean;
-  error: Error | null;
-}
-
-const SDKContext = createContext<SDKContextType>({
-  sdk: null,
-  isInitialized: false,
-  error: null
+export default defineConfig({
+  plugins: [react()],
+  base: './',
+  build: { outDir: 'build' }
 });
+```
+
+Project layout:
+
+```
+src/
+  main.tsx                 # mounts <SDKProvider> + router
+  machhub/sdk-context.tsx  # the one place the SDK is created (getSDK + <SDKProvider>)
+  machhub/tags.ts          # tag fan-out hub (machhub-sdk-realtime)
+  machhub/use-auth.tsx     # auth state + <RequireAuth>
+  hooks/use-collection.ts
+  hooks/use-tag.ts
+  pages/...
+```
+
+There is no `server/`, no `api/`, and no `.env`.
+
+---
+
+## SDK provider
+
+Create the SDK once, initialize it once, and render nothing that uses it until it's ready.
+
+```tsx
+// src/machhub/sdk-context.tsx
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { SDK } from '@machhub-dev/sdk-ts';
+
+type SDKState = { sdk: SDK | null; error: Error | null };
+
+const SDKContext = createContext<SDKState>({ sdk: null, error: null });
+
+// Module-level so React StrictMode's double effect run can't initialize twice.
+const sdk = new SDK();
+let ready: Promise<boolean> | null = null;
+
+/** Initialize once (zero-config: no arguments) and return the SDK. Usable outside components too (e.g. the tag hub). */
+export async function getSDK(): Promise<SDK> {
+  ready ??= sdk.Initialize();
+  if (!(await ready)) {
+    ready = null; // allow a retry
+    throw new Error('MACHHUB SDK failed to initialize. Is the Designer extension connected?');
+  }
+  return sdk;
+}
 
 export function SDKProvider({ children }: { children: ReactNode }) {
-  const [sdk, setSdk] = useState<SDK | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const [state, setState] = useState<SDKState>({ sdk: null, error: null });
 
   useEffect(() => {
-    async function initSDK() {
-      try {
-        await sdkService.initialize(machhubConfig);
-        setSdk(sdkService.getSDK());
-        setIsInitialized(true);
-      } catch (err) {
-        setError(err as Error);
-        console.error('Failed to initialize SDK:', err);
-      }
-    }
-
-    initSDK();
+    getSDK().then(
+      (s) => setState({ sdk: s, error: null }),
+      (err) => setState({ sdk: null, error: err as Error })
+    );
   }, []);
 
-  return (
-    <SDKContext.Provider value={{ sdk, isInitialized, error }}>
-      {children}
-    </SDKContext.Provider>
-  );
+  if (state.error) return <p>{state.error.message}</p>;
+  if (!state.sdk) return <p>Connecting to MACHHUB…</p>;
+  return <SDKContext.Provider value={state}>{children}</SDKContext.Provider>;
 }
 
-export function useSDK() {
-  const context = useContext(SDKContext);
-  if (!context) {
-    throw new Error('useSDK must be used within SDKProvider');
-  }
-  return context;
+/** The initialized SDK. Only valid inside <SDKProvider>, which gates rendering until ready. */
+export function useSDK(): SDK {
+  const { sdk } = useContext(SDKContext);
+  if (!sdk) throw new Error('useSDK must be used inside <SDKProvider>');
+  return sdk;
 }
 ```
 
 ---
 
-## Root Layout Setup
+## Auth
 
-```typescript
-// app/layout.tsx
-import { SDKProvider } from '@/components/providers/sdk-provider';
-import './globals.css';
+The SDK stores the JWT (in `localStorage`) and attaches it to every request. The app only tracks *who* is logged in.
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body>
-        <SDKProvider>
-          {children}
-        </SDKProvider>
-      </body>
-    </html>
-  );
-}
-```
+```tsx
+// src/machhub/use-auth.tsx
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+import { useSDK } from './sdk-context';
 
----
+type User = Awaited<ReturnType<ReturnType<typeof useSDK>['auth']['getCurrentUser']>>;
 
-## Custom Hooks
+type AuthState = {
+  user: User | null;
+  loading: boolean;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+};
 
-### useCollection Hook
+const AuthContext = createContext<AuthState | null>(null);
 
-```typescript
-// hooks/use-collection.ts
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useSDK } from '@/components/providers/sdk-provider';
-
-export function useCollection<T>(collectionName: string) {
-  const { sdk, isInitialized } = useSDK();
-  const [data, setData] = useState<T[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    if (!isInitialized || !sdk) {
-      return;
-    }
-
-    async function fetchData() {
-      try {
-        setLoading(true);
-        const result = await sdk.collection(collectionName).getAll();
-        setData(result);
-      } catch (err) {
-        setError(err as Error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchData();
-  }, [sdk, isInitialized, collectionName]);
-
-  const create = async (item: Omit<T, 'id'>): Promise<T> => {
-    if (!sdk) throw new Error('SDK not initialized');
-    const created = await sdk.collection(collectionName).create(item);
-    setData(prev => [...prev, created]);
-    return created;
-  };
-
-  const update = async (id: string, updates: Partial<T>): Promise<T> => {
-    if (!sdk) throw new Error('SDK not initialized');
-    const fullId = `myapp.${collectionName}:${id}`;
-    const updated = await sdk.collection(collectionName).update(fullId, updates);
-    setData(prev => prev.map(item => 
-      (item as any).id === id ? updated : item
-    ));
-    return updated;
-  };
-
-  const remove = async (id: string): Promise<void> => {
-    if (!sdk) throw new Error('SDK not initialized');
-    const fullId = `myapp.${collectionName}:${id}`;
-    await sdk.collection(collectionName).delete(fullId);
-    setData(prev => prev.filter(item => (item as any).id !== id));
-  };
-
-  return { data, loading, error, create, update, remove };
-}
-```
-
-### useRealtimeTag Hook
-
-```typescript
-// hooks/use-realtime-tag.ts
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useSDK } from '@/components/providers/sdk-provider';
-
-export function useRealtimeTag<T = any>(tagName: string) {
-  const { sdk, isInitialized } = useSDK();
-  const [data, setData] = useState<T | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-
-  useEffect(() => {
-    if (!isInitialized || !sdk) {
-      return;
-    }
-
-    const callback = (newData: T) => {
-      setData(newData);
-      setLastUpdate(new Date());
-    };
-
-    sdk.tag.subscribe(tagName, callback);
-
-    return () => {
-      sdk.tag.unsubscribe([tagName]);
-    };
-  }, [sdk, isInitialized, tagName]);
-
-  const publish = async (value: T) => {
-    if (!sdk) throw new Error('SDK not initialized');
-    await sdk.tag.publish(tagName, value);
-  };
-
-  return { data, lastUpdate, publish };
-}
-```
-
-### useAuth Hook
-
-```typescript
-// hooks/use-auth.ts
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useSDK } from '@/components/providers/sdk-provider';
-import { useRouter } from 'next/navigation';
-
-export function useAuth() {
-  const { sdk, isInitialized } = useSDK();
-  const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const sdk = useSDK();
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Restore the session on load. validateCurrentUser throws when there is no token.
   useEffect(() => {
-    if (!isInitialized || !sdk) return;
-
-    async function checkAuth() {
+    (async () => {
       try {
-        const currentUser = await sdk.auth.getCurrentUser();
-        setUser(currentUser);
-      } catch (err) {
+        const { valid } = await sdk.auth.validateCurrentUser();
+        setUser(valid ? await sdk.auth.getCurrentUser() : null);
+      } catch {
         setUser(null);
       } finally {
         setLoading(false);
       }
-    }
+    })();
+  }, [sdk]);
 
-    checkAuth();
-  }, [sdk, isInitialized]);
+  const login = useCallback(async (username: string, password: string) => {
+    await sdk.auth.login(username, password); // throws "Login failed: ..." on bad credentials
+    setUser(await sdk.auth.getCurrentUser());
+  }, [sdk]);
 
-  const login = async (username: string, password: string) => {
-    if (!sdk) throw new Error('SDK not initialized');
-    await sdk.auth.login(username, password);
-    const currentUser = await sdk.auth.getCurrentUser();
-    setUser(currentUser);
-    router.push('/dashboard');
-  };
-
-  const logout = async () => {
-    if (!sdk) throw new Error('SDK not initialized');
+  const logout = useCallback(async () => {
     await sdk.auth.logout();
     setUser(null);
-    router.push('/login');
-  };
+  }, [sdk]);
 
-  return { user, loading, login, logout };
+  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
+  return ctx;
+}
+
+/** Wrap private routes. Guards run in the browser because that is where the token lives. */
+export function RequireAuth({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
+  return <>{children}</>;
 }
 ```
 
+Permissions come from the SDK too. There is no `hasPermission`:
+
+```ts
+const { actions } = await sdk.auth.checkAction('my_feature', 'domain'); // e.g. ['read', 'read-write']
+const canEdit = actions.includes('read-write');
+```
+
+See `machhub-sdk-authorization` for features and scopes.
+
 ---
 
-## Client Component Example
+## Wiring it up
 
-```typescript
-// app/products/page.tsx
-'use client';
+```tsx
+// src/main.tsx
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { HashRouter, Route, Routes } from 'react-router-dom';
+import { SDKProvider } from './machhub/sdk-context';
+import { AuthProvider, RequireAuth } from './machhub/use-auth';
+import LoginPage from './pages/login';
+import ProductsPage from './pages/products';
 
-import { useCollection } from '@/hooks/use-collection';
-import { useState } from 'react';
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <SDKProvider>
+      <AuthProvider>
+        <HashRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<RequireAuth><ProductsPage /></RequireAuth>} />
+          </Routes>
+        </HashRouter>
+      </AuthProvider>
+    </SDKProvider>
+  </StrictMode>
+);
+```
 
-interface Product {
-  id: string;
-  name: string;
-  price: number;
-  description?: string;
-}
+Use **`HashRouter`**. It works unchanged under both port and path hosting. `BrowserRouter` also works on port hosting because MACHHUB falls back to `index.html`, but under path hosting it needs `basename` set to the app's path.
 
-export default function ProductsPage() {
-  const { data: products, loading, error, create, remove } = useCollection<Product>('products');
-  const [newProduct, setNewProduct] = useState({ name: '', price: 0 });
+```tsx
+// src/pages/login.tsx
+import { useState, type FormEvent } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../machhub/use-auth';
 
-  const handleCreate = async (e: React.FormEvent) => {
+export default function LoginPage() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const from = (useLocation().state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/';
+  const [error, setError] = useState('');
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const form = new FormData(e.currentTarget);
     try {
-      await create(newProduct);
-      setNewProduct({ name: '', price: 0 });
+      await login(String(form.get('username')), String(form.get('password')));
+      navigate(from, { replace: true });
     } catch (err) {
-      console.error('Failed to create product:', err);
+      setError((err as Error).message);
     }
-  };
-
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Products</h1>
-
-      <form onSubmit={handleCreate} className="mb-6">
-        <input
-          type="text"
-          placeholder="Product name"
-          value={newProduct.name}
-          onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-          className="border p-2 mr-2"
-        />
-        <input
-          type="number"
-          placeholder="Price"
-          value={newProduct.price}
-          onChange={(e) => setNewProduct({ ...newProduct, price: Number(e.target.value) })}
-          className="border p-2 mr-2"
-        />
-        <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
-          Add Product
-        </button>
-      </form>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {products.map((product) => (
-          <div key={product.id} className="border p-4 rounded">
-            <h3 className="font-bold">{product.name}</h3>
-            <p className="text-lg">${product.price}</p>
-            {product.description && <p className="text-sm text-gray-600">{product.description}</p>}
-            <button
-              onClick={() => remove(product.id)}
-              className="mt-2 bg-red-500 text-white px-3 py-1 rounded text-sm"
-            >
-              Delete
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-```
-
----
-
-## Server Component with Server Actions
-
-```typescript
-// app/products/actions.ts
-'use server';
-
-import { SDK } from '@machhub-dev/sdk-ts';
-import { revalidatePath } from 'next/cache';
-
-// Note: This is for demonstration. SDK should ideally be client-side
-// For server actions, consider using MACHHUB REST API directly
-
-export async function getProducts() {
-  // In production, use direct API calls or a server-safe method
-  const response = await fetch(`${process.env.MACHHUB_HTTP_URL}/collections/products`, {
-    headers: {
-      'Authorization': `Bearer ${process.env.MACHHUB_DEVELOPER_KEY}`
-    }
-  });
-  return response.json();
-}
-
-export async function createProduct(formData: FormData) {
-  const name = formData.get('name') as string;
-  const price = Number(formData.get('price'));
-
-  // Server-side API call
-  await fetch(`${process.env.MACHHUB_HTTP_URL}/collections/products`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.MACHHUB_DEVELOPER_KEY}`
-    },
-    body: JSON.stringify({ name, price })
-  });
-
-  revalidatePath('/products');
-}
-```
-
----
-
-## Real-time Dashboard
-
-```typescript
-// app/dashboard/page.tsx
-'use client';
-
-import { useRealtimeTag } from '@/hooks/use-realtime-tag';
-
-interface SensorData {
-  value: number;
-  timestamp: string;
-  unit: string;
-}
-
-export default function DashboardPage() {
-  const temperature = useRealtimeTag<SensorData>('temperature/room1');
-  const humidity = useRealtimeTag<SensorData>('humidity/room1');
-
-  return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Real-time Dashboard</h1>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="border p-4 rounded">
-          <h3 className="font-bold">Temperature</h3>
-          {temperature.data ? (
-            <>
-              <p className="text-3xl">{temperature.data.value}°C</p>
-              <p className="text-sm text-gray-500">
-                Updated: {temperature.lastUpdate?.toLocaleTimeString()}
-              </p>
-            </>
-          ) : (
-            <p>Loading...</p>
-          )}
-        </div>
-
-        <div className="border p-4 rounded">
-          <h3 className="font-bold">Humidity</h3>
-          {humidity.data ? (
-            <>
-              <p className="text-3xl">{humidity.data.value}%</p>
-              <p className="text-sm text-gray-500">
-                Updated: {humidity.lastUpdate?.toLocaleTimeString()}
-              </p>
-            </>
-          ) : (
-            <p>Loading...</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-```
-
----
-
-## Protected Route Middleware
-
-```typescript
-// middleware.ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-
-export function middleware(request: NextRequest) {
-  // Check authentication cookie or header
-  const authToken = request.cookies.get('auth-token');
-
-  if (!authToken && request.nextUrl.pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  return NextResponse.next();
+  return (
+    <form onSubmit={onSubmit}>
+      <input name="username" autoComplete="username" required />
+      <input name="password" type="password" autoComplete="current-password" required />
+      {error && <p role="alert">{error}</p>}
+      <button type="submit">Sign in</button>
+    </form>
+  );
 }
-
-export const config = {
-  matcher: '/dashboard/:path*'
-};
 ```
 
 ---
 
-## Best Practices
+## Collections hook
 
-1. ✅ **'use client' directive** - Mark SDK usage as client-side only
-2. ✅ **Context Provider** - Wrap app with SDKProvider
-3. ✅ **Custom hooks** - Create reusable hooks for common patterns
-4. ✅ **Environment variables** - Use NEXT_PUBLIC_ prefix for client vars
-5. ✅ **Error boundaries** - Wrap components with error handlers
-6. ✅ **Loading states** - Show loading UI while fetching data
-7. ✅ **TypeScript** - Use strict typing for better DX
-8. ✅ **Cleanup** - Unsubscribe in useEffect cleanup
+```ts
+// src/hooks/use-collection.ts
+import { useCallback, useEffect, useState } from 'react';
+import type { RecordID } from '@machhub-dev/sdk-ts';
+import { useSDK } from '../machhub/sdk-context';
+
+// Records keep the `id` the SDK returned ({ Table, ID }). Pass it straight back to update/delete.
+// For a React key, use RecordIDToString(item.id).
+export function useCollection<T extends { id: RecordID }>(name: string) {
+  const sdk = useSDK();
+  const [items, setItems] = useState<T[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      setItems(await sdk.collection(name).getAll());
+      setError(null);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setLoading(false);
+    }
+  }, [sdk, name]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const create = async (data: Omit<T, 'id'>) => {
+    await sdk.collection(name).create(data as Record<string, unknown>);
+    await refresh();
+  };
+  const update = async (item: T, changes: Partial<Omit<T, 'id'>>) => {
+    await sdk.collection(name).update(item.id, changes as Record<string, unknown>);
+    await refresh();
+  };
+  const remove = async (item: T) => {
+    await sdk.collection(name).delete(item.id);
+    await refresh();
+  };
+
+  return { items, loading, error, refresh, create, update, remove };
+}
+```
+
+Filtering, sorting, expanding relations, and file fields are covered in `machhub-sdk-collections` and `machhub-sdk-file-handling`.
 
 ---
 
-## Next.js + React Checklist
+## Realtime tags
 
-- [ ] SDK service marked with 'use client'
-- [ ] SDKProvider wraps entire app
-- [ ] Environment variables configured with NEXT_PUBLIC_ prefix
-- [ ] Custom hooks created for common patterns
-- [ ] Loading and error states handled
-- [ ] Real-time subscriptions cleaned up properly
-- [ ] Protected routes use middleware or guards
-- [ ] TypeScript types defined for collections
-- [ ] Error boundaries implemented
+The SDK keeps **one handler per topic**, so two components subscribing to the same tag directly would knock each other out. Put the fan-out hub from `machhub-sdk-realtime` in `src/machhub/tags.ts`, importing `getSDK` from `./sdk-context`, then wrap it:
+
+```ts
+// src/hooks/use-tag.ts
+import { useEffect, useState } from 'react';
+import { watchTag, writeTag } from '../machhub/tags';
+
+export function useTag<T = unknown>(topic: string) {
+  const [value, setValue] = useState<T | null>(null);
+
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    watchTag(topic, (v) => setValue(v as T)).then((s) => (cancelled ? s() : (stop = s)));
+    return () => { cancelled = true; stop?.(); };
+  }, [topic]);
+
+  return { value, publish: (v: T) => writeTag(topic, v) };
+}
+```
 
 ---
 
-## Resources
+## Build and deploy
 
-- **Next.js Docs**: https://nextjs.org/docs
-- **React Docs**: https://react.dev
-- **MACHHUB SDK**: See `machhub-sdk-initialization`
+```bash
+npm run build   # outputs build/ (index.html at the top level)
+```
+
+Upload with the Designer extension. It uploads the contents of `build/` by default (the **Build Folder Path** setting in the runtime profile). On the Applications page, set **Application Type = SPA**. Don't add a `server.js` or a start script, because MACHHUB supplies both.
+
+---
+
+## Next.js (only if asked)
+
+Next.js works only as a **static export**, which makes it the same client-only SPA as above:
+
+```js
+// next.config.mjs
+export default { output: 'export', trailingSlash: true, images: { unoptimized: true } };
+```
+
+- Mark every component that touches the SDK with `'use client'`. The SDK never runs on the server.
+- Put `SDKProvider` and `AuthProvider` in a client component that `app/layout.tsx` renders.
+- Guard pages in the client with `useRouter().replace('/login')` inside an effect. Don't use `middleware.ts`.
+- **Not allowed:** `app/api/**`, `pages/api/**`, `'use server'`, `middleware.ts`, `getServerSideProps`, `cookies()`/`headers()`, or any `NEXT_PUBLIC_MACHHUB_*` variable. A static export either can't build these or can't run them.
+- `npm run build` writes `out/`. Set the Designer's **Build Folder Path** to `out`, then upload it as an SPA.
+
+---
+
+## Checklist before you finish
+
+- [ ] `sdk.Initialize()` is called once, with **no arguments**
+- [ ] No server code: no `server.js`, Express, API routes, Server Actions, or `middleware.ts`
+- [ ] No MACHHUB URLs, app IDs, or developer keys in code or `.env`
+- [ ] Login uses `sdk.auth.login`, and guards run client-side
+- [ ] Record IDs are passed back as returned, never rebuilt
+- [ ] Tag subscriptions unsubscribe in effect cleanup
+- [ ] `vite.config.ts` has `base: './'` and `outDir: 'build'` (or Next has `output: 'export'`)
+- [ ] The build output uploads as an **SPA**

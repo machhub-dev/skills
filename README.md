@@ -1,7 +1,8 @@
 # Official MACHHUB Agent Skills (machhub-dev/plugins)
 
-Official [Agent Skills](https://agentskills.io) for MACHHUB development — SDK integration,
-framework-specific guides, Designer workspace JSON, and **57 production-ready templates**.
+Official [Agent Skills](https://agentskills.io) for MACHHUB development: SDK usage, framework
+guides, and the Designer workspace JSON formats. The code in each skill is checked against the SDK
+(`@machhub-dev/sdk-ts`) and the MACHHUB API.
 
 Works in Claude Code, claude.ai, GitHub Copilot, Cursor, Codex, ChatGPT, Antigravity, Gemini CLI
 and any other host that reads the Agent Skills format. See [Install](#-install).
@@ -10,14 +11,15 @@ and any other host that reads the Agent Skills format. See [Install](#-install).
 
 ## 🚀 Quick Start
 
-**For development, we recommend the zero-configuration approach:**
+A MACHHUB app is a **client-only SPA**. MACHHUB hosts it and is its backend.
 
-1. Install [MACHHUB Designer Extension](https://marketplace.visualstudio.com) in VSCode
-2. Install MACHHUB SDK: `npm install @machhub-dev/sdk-ts`
-3. Add these skills to your agent — see [Install](#-install)
-4. Start coding - no configuration needed!
+1. Install the [MACHHUB Designer Extension](https://marketplace.visualstudio.com) in VS Code and connect it to a runtime.
+2. `npm install @machhub-dev/sdk-ts`
+3. Add these skills to your agent. See [Install](#-install).
+4. Call `await sdk.Initialize()` with **no arguments**. The same build works in `npm run dev` (through the Designer) and once uploaded (MACHHUB serves the config).
+5. Build to `build/`, upload it with the Designer, and set Application Type = SPA.
 
-For production deployments, see manual configuration in each skill's documentation.
+There are no environment variables, no app IDs or URLs in code, and no server of your own. See `machhub-sdk-initialization`.
 
 ---
 
@@ -185,10 +187,9 @@ reads `.claude/skills/` instead. Both directory names also work at `~/` for a gl
 ```
 
 **Expected response should:**
-- Reference `machhub-sdk-initialization` skill
-- Reference `machhub-angular` skill
-- Copy code from `machhub-angular/templates/sdk.service.ts`
-- Mention Designer Extension as the initialization method
+- Reference the `machhub-sdk-initialization` and `machhub-angular` skills
+- Call `sdk.Initialize()` with no arguments in `provideAppInitializer`
+- Add no environment config, SSR, or server code
 
 ---
 
@@ -239,30 +240,32 @@ a database credential that should not sit in a file the extension pushes on ever
 
 ## 📚 Skills Overview
 
-### Core SDK Skills (7 skills + 33 templates)
+### Core SDK Skills
 
-Complete framework-agnostic guides for MACHHUB TypeScript SDK:
+Framework-agnostic guides for the MACHHUB TypeScript SDK:
 
-| Skill Name                   | Description                                                         | Templates |
-| ---------------------------- | ------------------------------------------------------------------- | --------- |
-| `machhub-sdk-initialization` | SDK setup with Designer Extension (zero-config) and manual config   | 4         |
-| `machhub-sdk-architecture`   | Service layer patterns, BaseService, and project structure          | 4         |
-| `machhub-sdk-collections`    | CRUD operations, RecordID handling, queries, and relationships      | 4         |
-| `machhub-sdk-authentication` | Login, permissions, user management, and JWT validation             | 4         |
-| `machhub-sdk-realtime`       | Tag subscriptions, MQTT messaging, and IoT data streaming           | 3         |
-| `machhub-sdk-file-handling`  | File upload, download, and Blob handling for collection file fields | 3         |
-| `machhub-sdk-advanced`       | Historian queries, remote functions, caching, and time-series data  | 4         |
+| Skill Name                   | Description                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `machhub-sdk-initialization` | Zero-config `Initialize()`, how config discovery works, API keys for Node   |
+| `machhub-sdk-architecture`   | App structure: one SDK module, thin data modules, hubs, error handling      |
+| `machhub-sdk-collections`    | CRUD, record IDs, relations, filters, JSON-array filters, expand            |
+| `machhub-sdk-authentication` | Login, logout, session restore, client-side guards                          |
+| `machhub-sdk-authorization`  | `checkAction`/`checkPermission`, users, groups, permissions                 |
+| `machhub-sdk-realtime`       | Tag subscribe/publish, wildcards, and the fan-out hub                       |
+| `machhub-sdk-file-handling`  | File fields: upload, replace, clear, download as Blob                       |
+| `machhub-sdk-advanced`       | Historian reads and CSV export, Data Bridge queries                         |
+| `machhub-sdk-processes`      | Server-side Python/TypeScript processes and their triggers                  |
 
-### Framework-Specific Skills (4 skills + 24 templates)
+### Framework Skills
 
-Integration guides and templates for popular frameworks:
+Each one is a client-only SPA uploaded as Application Type = SPA:
 
-| Skill Name                 | Description                                                 | Templates |
-| -------------------------- | ----------------------------------------------------------- | --------- |
-| `machhub-angular`          | Angular integration with DI, RxJS, Signals, and guards      | 6         |
-| `machhub-nextjs-react`     | Next.js 14+ App Router with React hooks and Context API     | 7         |
-| `machhub-nuxt-vue`         | Nuxt 3 with Vue 3 Composition API, composables, and plugins | 7         |
-| `machhub-sveltekit-svelte` | SvelteKit with Svelte 5 runes, stores, and load functions   | 7         |
+| Skill Name                 | Description                                                          |
+| -------------------------- | -------------------------------------------------------------------- |
+| `machhub-angular`          | Angular: standalone, signals, `provideAppInitializer`, `authGuard`   |
+| `machhub-nextjs-react`     | React: Vite SPA (or Next.js static export)                           |
+| `machhub-nuxt-vue`         | Vue 3: Vite SPA (or Nuxt with `ssr: false`, generated)               |
+| `machhub-sveltekit-svelte` | SvelteKit: adapter-static SPA with Svelte 5 runes                    |
 
 ### Workspace File Skills
 
@@ -281,8 +284,6 @@ by the Designer extension — see [Designer Workspace Layout](#-designer-workspa
 
 | Skill Name                 | Description                                                            |
 | -------------------------- | ---------------------------------------------------------------------- |
-| `machhub-sdk-authorization`| Permission checking, group management and access control               |
-| `machhub-sdk-processes`    | Processes — Python/TypeScript functions with trigger-based execution   |
 | `machhub-headless-sdk`     | Running the SDK from a standalone Node script, no browser or UI        |
 | `machhub-runtime-query`    | Answering data questions against the live runtime, read-only           |
 
@@ -290,92 +291,22 @@ by the Designer extension — see [Designer Workspace Layout](#-designer-workspa
 
 ---
 
-## 🎯 Zero-Configuration First
+## 🎯 The rules every app skill enforces
 
-All skills prioritize **MACHHUB Designer Extension** for automatic zero-config initialization:
-
-✅ **Default Approach (Development)**
-- Install Designer Extension in VSCode
-- No configuration files needed
-- Auto-detects MACHHUB server
-- Perfect for rapid development
-
-⚙️ **Manual Configuration (Production)**
-- Environment variables
-- Explicit connection parameters
-- For deployments and CI/CD
-- See each skill's manual config templates
-
----
-
-## 📁 Templates Structure
-
-Each skill includes separate template files (not embedded in docs):
-
-```
-machhub-[skill-name]/templates/
-  *.ts, *.tsx, *.vue, *.svelte  # Production-ready code
-  README.md                      # Usage guide
-```
-
-See [TEMPLATES_OVERVIEW.md](TEMPLATES_OVERVIEW.md) for the complete template catalog.
-
----
-
-## 📖 Usage Examples
-
-### Angular
-```typescript
-// Copy templates/sdk.service.ts
-@Injectable({ providedIn: 'root' })
-export class ProductService {
-  constructor(private sdkService: SDKService) {}
-  
-  async getProducts() {
-    const sdk = this.sdkService.getSDK();
-    return await sdk.collection('products').getAll();
-  }
-}
-```
-
-### React/Next.js
-```tsx
-// Copy templates/sdk-context.tsx
-function Products() {
-  const { items, loading, getAll } = useCollection('products');
-  useEffect(() => { getAll(); }, []);
-  return <div>{items.map(p => <div key={p.id}>{p.name}</div>)}</div>;
-}
-```
-
-### Vue/Nuxt
-```vue
-<script setup>
-const { items, loading, getAll } = useCollection('products');
-onMounted(() => getAll());
-</script>
-```
-
-### Svelte/SvelteKit
-```svelte
-<script lang="ts">
-const store = createCollectionStore('products');
-onMount(() => store.getAll());
-</script>
-{#if store.loading}...{/if}
-```
+- **Zero-config.** Call `sdk.Initialize()` with no arguments, with no `.env` URLs, app IDs, or developer keys in a frontend.
+- **No server of your own.** No API routes, server actions, SSR, or Express. MACHHUB replaces any `server.js` you upload with its own, which serves the SDK's config and proxies its calls. Server-side logic belongs in a **Process**.
+- **SDK only.** Don't `fetch` MACHHUB REST paths or build your own login. `sdk.auth.login` stores and sends the token.
+- **Opaque IDs.** Pass `record.id` back exactly as returned. Never rebuild `<domain>.<collection>:<id>`.
+- **Build to `build/`** and upload it as an **SPA**.
 
 ---
 
 ## 🛠️ Development Workflow
 
-1. **Choose Your Framework** - Select the appropriate skill
-2. **Install Prerequisites** - `npm install @machhub-dev/sdk-ts`
-3. **Copy Templates** - Browse skill's `templates/` directory
-4. **Install Designer Extension** - For zero-config initialization
-5. **Start Coding** - No configuration needed!
-
-For production, use manual config templates and set environment variables.
+1. Pick the framework skill (Angular, React, Vue, or SvelteKit) and follow its setup.
+2. Connect the Designer extension to a runtime, then run `npm run dev`.
+3. Use the core SDK skills for data, auth, tags, files, and history.
+4. Run `npm run build`, then upload `build/` from the Designer and set the application type to SPA.
 
 ---
 
@@ -404,7 +335,6 @@ plugins/
 ├── plugin.json                    # Antigravity plugin manifest
 ├── README.md                      # This file
 ├── PUBLISHING.md                  # Release + marketplace submission guide
-├── TEMPLATES_OVERVIEW.md          # Complete template catalog
 └── skills/
     ├── machhub-collection-json/    # Collection JSON schema
     ├── machhub-namespace-json/     # Namespace JSON schema (topic tree + historian)
@@ -413,43 +343,40 @@ plugins/
     ├── machhub-databridge-json/    # Data Bridge JSON schema (3 templates)
     ├── machhub-headless-sdk/       # Standalone Node scripts
     ├── machhub-runtime-query/      # Live read-only runtime queries
-    ├── machhub-sdk-initialization/ # SDK setup (4 templates)
-    ├── machhub-sdk-architecture/   # Service patterns (4 templates)
-    ├── machhub-sdk-collections/    # CRUD operations (4 templates)
-    ├── machhub-sdk-authentication/ # Auth & permissions (4 templates)
+    ├── machhub-sdk-initialization/ # SDK setup
+    ├── machhub-sdk-architecture/   # App structure
+    ├── machhub-sdk-collections/    # CRUD, IDs, queries
+    ├── machhub-sdk-authentication/ # Login & session
     ├── machhub-sdk-authorization/  # Permission checks & group management
     ├── machhub-sdk-processes/      # Processes & trigger-based execution
-    ├── machhub-sdk-realtime/       # Real-time (3 templates)
-    ├── machhub-sdk-file-handling/  # File operations (3 templates)
-    ├── machhub-sdk-advanced/       # Advanced features (4 templates)
-    ├── machhub-angular/            # Angular integration (6 templates)
-    ├── machhub-nextjs-react/       # Next.js + React (7 templates)
-    ├── machhub-nuxt-vue/           # Nuxt + Vue (7 templates)
-    └── machhub-sveltekit-svelte/   # SvelteKit + Svelte (7 templates)
+    ├── machhub-sdk-realtime/       # Live tags
+    ├── machhub-sdk-file-handling/  # File fields
+    ├── machhub-sdk-advanced/       # Historian & Data Bridge
+    ├── machhub-angular/            # Angular SPA
+    ├── machhub-nextjs-react/       # React SPA (Vite / Next static export)
+    ├── machhub-nuxt-vue/           # Vue SPA (Vite / Nuxt client-only)
+    └── machhub-sveltekit-svelte/   # SvelteKit SPA (adapter-static)
 ```
 
 ---
 
 ## 🎓 Learning Path
 
-1. **Start**: `machhub-sdk-initialization` - Zero-config setup
-2. **Core**: `machhub-sdk-architecture` - Service patterns
-3. **Data**: `machhub-sdk-collections` - CRUD operations
-4. **Auth**: `machhub-sdk-authentication` - User management
-5. **Real-time**: `machhub-sdk-realtime` - Live updates
-6. **Advanced**: File handling, Historian, caching
-7. **Framework**: Choose your framework skill
+1. **Framework**: your framework skill (it links to the rest)
+2. **Start**: `machhub-sdk-initialization` (zero-config setup)
+3. **Structure**: `machhub-sdk-architecture`
+4. **Data**: `machhub-sdk-collections`, then `machhub-sdk-file-handling`
+5. **Users**: `machhub-sdk-authentication`, then `machhub-sdk-authorization`
+6. **Live and history**: `machhub-sdk-realtime`, then `machhub-sdk-advanced`
+7. **Server logic**: `machhub-sdk-processes`
 
 ---
 
-## 🔄 Recent Updates (v2.0 - February 2026)
+## 🔄 Recent Updates (September 2026)
 
-- ✅ All skills now framework-agnostic
-- ✅ Added explicit SPA deployment support
-- ✅ Created 4 framework-specific skills
-- ✅ Separated 57 templates into standalone files
-- ✅ Emphasized Designer Extension (zero-config) as default
-- ✅ Added comprehensive template documentation
+- ✅ App skills rewritten around client-only SPAs with zero-config `Initialize()`. The manual "production" config, server routes, and hand-written REST calls are gone
+- ✅ SDK skills checked against the SDK and API source: real method names, record ID format, relation handling, historian ranges, and MQTT dispatch behaviour
+- ✅ Standalone templates that had drifted from the SDK were removed. Each skill's code now lives in its SKILL.md
 
 ---
 
@@ -460,8 +387,8 @@ Contributions welcome from MACHHUB developers:
 - Submit PRs for bug fixes, improvements, or new skills
 - Ensure alignment with MACHHUB best practices
 - Include proper documentation and examples
-- Test templates with actual MACHHUB projects
-- Follow the zero-config first approach
+- Check code against the SDK source and a real MACHHUB runtime
+- Follow the zero-config, client-only approach
 
 ---
 
